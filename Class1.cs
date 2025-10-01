@@ -224,7 +224,7 @@ namespace ARC_TPA_Commands
         public Timer ExpiryTimer { get; private set; }
         public bool IsActive { get; private set; } = true;
 
-        public TPARequest(ulong requesterId, string requesterName, Vector3 requesterPos, double timeoutSeconds, Action onExpire)
+        public TPARequest(ulong requesterId, string requesterName, Vector3 requesterPos, double timeoutSeconds, System.Action onExpire)
         {
             RequesterId = requesterId;
             RequesterName = requesterName;
