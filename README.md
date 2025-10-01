@@ -7,8 +7,11 @@ It adds familiar multiplayer commands for requesting, accepting, denying, and ca
 - `/tpa <player>` – request to teleport to another player  
 - `/tpaccept` – accept a pending request  
 - `/tpdeny` – deny a request  
-- `/tpcancel` – cancel your outgoing request  
-- Configurable request timeout, teleport delay, cooldowns, and “cancel-on-move” settings.  
+- `/tpcancel` – cancel your outgoing request
+- Type `/tpa` with no player name to see your pending request, expiry and cooldown at a glance.
+- Friendly error handling: automatically lists close name matches and blocks self-requests.
+- Configurable request timeout, teleport delay, cooldowns, “cancel-on-move” settings, and an optional permission gate.
+- Permissions are **disabled by default** so every player can use the system out of the box.
 - Minimal dependencies (just RocketMod and Unturned).
 
 ---
@@ -49,4 +52,8 @@ It adds familiar multiplayer commands for requesting, accepting, denying, and ca
   <CooldownSeconds>15</CooldownSeconds>
   <CancelOnMove>true</CancelOnMove>
   <CancelOnMoveDistance>0.8</CancelOnMoveDistance>
+  <Use_Permissions>false</Use_Permissions>
 </Configuration>
+```
+
+* `Use_Permissions` toggles RocketMod permission checks for the commands. Leave it `false` (default) to allow everyone to use `/tpa` features, or set it to `true` if you want to require the `tpa.request`, `tpa.accept`, `tpa.deny`, and `tpa.cancel` permission nodes.
