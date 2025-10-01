@@ -1,17 +1,29 @@
-// ---------- FILE: TPAPlugin.cs ----------
-// RocketMod TPA plugin (2025) - /tpa, /tpaccept, /tpdeny, /tpcancel
-// Build this file into TPAPlugin.dll using the .csproj below.
-// Place the compiled DLL at: Rocket/Plugins/TPAPlugin/TPAPlugin.dll
-// On first run, the config XML (below) will auto-generate. You can also pre-create it.
-
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Timers;
+using System.Threading.Tasks;
 using Rocket.API;
-using Rocket.Core;
 using Rocket.Core.Logging;
+using Rocket.Core.Plugins;
+using Rocket.Core.Utils;
+using Rocket.Unturned.Chat;
+using Rocket.Unturned.Player;
+using SDG.Unturned;
+using Steamworks;
+using UnityEngine;
+
+namespace ARC_TPA_Commands
+{
+    public class TPAConfig : IRocketPluginConfiguration
+    {
+        public ushort RequestTimeoutSeconds;
         public ushort TeleportDelaySeconds;
         public ushort CooldownSeconds;
         public bool CancelOnMove;
         public float CancelOnMoveDistance;
         public bool Use_Permissions;
+
         public void LoadDefaults()
         {
             RequestTimeoutSeconds = 60;
@@ -22,6 +34,9 @@ using Rocket.Core.Logging;
             Use_Permissions = false;
         }
     }
+
+    public class TPAPlugin : RocketPlugin<TPAConfig>
+    {
         internal static TPAPlugin Instance;
         internal static readonly Dictionary<ulong, TPARequest> Pending = new Dictionary<ulong, TPARequest>();
         internal static readonly Dictionary<ulong, DateTime> Cooldowns = new Dictionary<ulong, DateTime>();
@@ -32,39 +47,133 @@ using Rocket.Core.Logging;
         protected override void Load()
         {
             Instance = this;
-            Rocket.Core.Logging.Logger.Log("[TPA] Loaded: /tpa, /tpaccept, /tpdeny, /tpcancel");
+            Logger.Log("[TPA] Loaded: /tpa, /tpaccept, /tpdeny, /tpcancel");
             U.Events.OnPlayerDisconnected += OnPlayerDisconnected;
         }
+
         protected override void Unload()
         {
-            Instance = null;
             U.Events.OnPlayerDisconnected -= OnPlayerDisconnected;
+
             foreach (var request in Pending.Values)
             {
                 request.Cancel();
             }
+
             Pending.Clear();
             Cooldowns.Clear();
+            Instance = null;
         }
-        private void OnPlayerDisconnected(UnturnedPlayer p)
+
+        private void OnPlayerDisconnected(UnturnedPlayer player)
         {
-            var affected = Pending.Where(kv => kv.Key == p.CSteamID.m_SteamID || kv.Value.RequesterId == p.CSteamID.m_SteamID)
-                                  .Select(kv => kv.Key).ToList();
-            foreach (var key in affected)
+            if (player == null)
             {
-                if (Pending.TryGetValue(key, out var req))
+                return;
+            }
+
+            ulong steamId = player.CSteamID.m_SteamID;
+            var affectedTargets = Pending.Where(kv => kv.Key == steamId || kv.Value.RequesterId == steamId)
+                                          .Select(kv => kv.Key)
+                                          .ToList();
+
+            foreach (var targetId in affectedTargets)
+            {
+                if (!Pending.TryGetValue(targetId, out var request))
                 {
-                    req.Cancel();
-                    Pending.Remove(key);
+                    continue;
+                }
+
+                Pending.Remove(targetId);
+                request.Cancel();
+
+                if (targetId == steamId)
+                {
+                    var requester = UnturnedPlayer.FromCSteamID(new CSteamID(request.RequesterId));
+                    if (requester != null)
+                    {
+                        Err(requester, $"Your TPA request to {player.DisplayName} was cancelled because they disconnected.");
+                    }
+                }
+                else
+                {
+                    var target = UnturnedPlayer.FromCSteamID(new CSteamID(targetId));
+                    if (target != null)
+                    {
+                        Err(target, $"{request.RequesterName} disconnected. Their TPA request was cancelled.");
+                    }
                 }
             }
+
+            Cooldowns.Remove(steamId);
         }
-            int cd = Config?.CooldownSeconds ?? 15; Cooldowns[r.CSteamID.m_SteamID] = DateTime.UtcNow.AddSeconds(cd);
+
+        internal static void Msg(UnturnedPlayer player, string message)
+        {
+            if (player == null)
+            {
+                return;
+            }
+
+            UnturnedChat.Say(player, message, Color.cyan);
         }
+
+        internal static void Err(UnturnedPlayer player, string message)
+        {
+            if (player == null)
+            {
+                return;
+            }
+
+            UnturnedChat.Say(player, message, Color.red);
+        }
+
+        internal static void StartCooldown(UnturnedPlayer player)
+        {
+            if (player == null)
+            {
+                return;
+            }
+
+            int cooldown = Config?.CooldownSeconds ?? 15;
+            if (cooldown <= 0)
+            {
+                Cooldowns.Remove(player.CSteamID.m_SteamID);
+                return;
+            }
+
+            Cooldowns[player.CSteamID.m_SteamID] = DateTime.UtcNow.AddSeconds(cooldown);
+        }
+
+        internal static bool IsOnCooldown(UnturnedPlayer player, out int remainingSeconds)
+        {
+            remainingSeconds = 0;
+
+            if (player == null)
+            {
+                return false;
+            }
+
+            if (!Cooldowns.TryGetValue(player.CSteamID.m_SteamID, out var until))
+            {
+                return false;
+            }
+
+            int remaining = (int)Math.Ceiling((until - DateTime.UtcNow).TotalSeconds);
+            if (remaining <= 0)
+            {
+                Cooldowns.Remove(player.CSteamID.m_SteamID);
+                return false;
+            }
+
+            remainingSeconds = remaining;
+            return true;
+        }
+
         internal static bool TryFindPlayer(string query, ulong callerId, out UnturnedPlayer player, out string failureMessage)
         {
-            failureMessage = null;
             player = null;
+            failureMessage = null;
 
             query = query?.Trim();
             if (string.IsNullOrEmpty(query))
@@ -73,8 +182,10 @@ using Rocket.Core.Logging;
                 return false;
             }
 
-            var matches = Provider.clients.Select(c => UnturnedPlayer.FromCSteamID(c.playerID.steamID))
-                .Where(x => x != null && (x.DisplayName.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0 || x.CharacterName.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0))
+            var matches = Provider.clients
+                .Select(c => UnturnedPlayer.FromCSteamID(c.playerID.steamID))
+                .Where(p => p != null && (p.DisplayName.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                          p.CharacterName.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0))
                 .ToList();
 
             if (matches.Count == 0)
@@ -86,7 +197,8 @@ using Rocket.Core.Logging;
             if (matches.Count > 1)
             {
                 var preview = matches.Take(5).Select(m => m.DisplayName).ToList();
-                failureMessage = $"Multiple matches: {string.Join(", ", preview)}" + (matches.Count > preview.Count ? "..." : string.Empty);
+                failureMessage = $"Multiple matches: {string.Join(", ", preview)}" +
+                                  (matches.Count > preview.Count ? "..." : string.Empty);
                 return false;
             }
 
@@ -100,212 +212,278 @@ using Rocket.Core.Logging;
             player = match;
             return true;
         }
-        public ulong RequesterId;
-        public string RequesterName;
-        public Vector3 RequesterPos;
-        public DateTime CreatedUtc;
-        public double TimeoutSeconds;
-        public Timer ExpiryTimer;
-        public bool IsActive = true;
-        public TPARequest(ulong requesterId, string requesterName, Vector3 requesterPos, double timeoutSeconds, System.Action onExpire)
+    }
+
+    public class TPARequest
+    {
+        public ulong RequesterId { get; }
+        public string RequesterName { get; }
+        public Vector3 RequesterPos { get; }
+        public DateTime CreatedUtc { get; }
+        public double TimeoutSeconds { get; }
+        public Timer ExpiryTimer { get; private set; }
+        public bool IsActive { get; private set; } = true;
+
+        public TPARequest(ulong requesterId, string requesterName, Vector3 requesterPos, double timeoutSeconds, Action onExpire)
         {
-            RequesterId = requesterId; RequesterName = requesterName; RequesterPos = requesterPos; CreatedUtc = DateTime.UtcNow;
+            RequesterId = requesterId;
+            RequesterName = requesterName;
+            RequesterPos = requesterPos;
+            CreatedUtc = DateTime.UtcNow;
             TimeoutSeconds = timeoutSeconds;
+
             ExpiryTimer = new Timer(timeoutSeconds * 1000) { AutoReset = false };
-            ExpiryTimer.Elapsed += (s, e) => { IsActive = false; onExpire?.Invoke(); };
+            ExpiryTimer.Elapsed += (s, e) =>
+            {
+                IsActive = false;
+                onExpire?.Invoke();
+            };
             ExpiryTimer.Start();
         }
+
         public void Cancel()
         {
-            IsActive = false; if (ExpiryTimer != null) { ExpiryTimer.Stop(); ExpiryTimer.Dispose(); ExpiryTimer = null; }
+            IsActive = false;
+            if (ExpiryTimer != null)
+            {
+                ExpiryTimer.Stop();
+                ExpiryTimer.Dispose();
+                ExpiryTimer = null;
+            }
         }
+
         public int GetSecondsRemaining()
         {
-            if (!IsActive) return 0;
+            if (!IsActive)
+            {
+                return 0;
+            }
+
             double remaining = TimeoutSeconds - (DateTime.UtcNow - CreatedUtc).TotalSeconds;
             return remaining <= 0 ? 0 : (int)Math.Ceiling(remaining);
         }
     }
+
+    public class CommandTPA : IRocketCommand
+    {
         private static readonly List<string> RequiredPermissions = new List<string> { "tpa.request" };
+
+        public AllowedCaller AllowedCaller => AllowedCaller.Player;
+        public string Name => "tpa";
+        public string Help => "Send a teleport request";
+        public string Syntax => "/tpa <player>";
+        public List<string> Aliases => new List<string>();
         public List<string> Permissions => TPAPlugin.PermissionsEnabled ? RequiredPermissions : new List<string>();
-        public void Execute(IRocketPlayer ic, string[] cmd)
+
+        public void Execute(IRocketPlayer caller, string[] command)
         {
-            var caller = (UnturnedPlayer)ic;
-            if (cmd.Length < 1)
+            var player = (UnturnedPlayer)caller;
+
+            if (command.Length < 1)
             {
-                var status = TPAPlugin.Pending.FirstOrDefault(kv => kv.Value.RequesterId == caller.CSteamID.m_SteamID);
+                var status = TPAPlugin.Pending.FirstOrDefault(kv => kv.Value.RequesterId == player.CSteamID.m_SteamID);
                 if (status.Key != 0 && status.Value.IsActive)
                 {
-                    var targetPlayer = UnturnedPlayer.FromCSteamID(new Steamworks.CSteamID(status.Key));
+                    var targetPlayer = UnturnedPlayer.FromCSteamID(new CSteamID(status.Key));
                     var remaining = status.Value.GetSecondsRemaining();
                     string targetName = targetPlayer != null ? targetPlayer.DisplayName : "(offline player)";
-                    TPAPlugin.Msg(caller, $"Pending request to {targetName}. {remaining}s remaining. Use /tpcancel to cancel.");
+                    TPAPlugin.Msg(player, $"Pending request to {targetName}. {remaining}s remaining. Use /tpcancel to cancel.");
                 }
                 else
                 {
-                    TPAPlugin.Msg(caller, "Usage: /tpa <player>. Use /tpcancel to cancel your outgoing request.");
-                    if (TPAPlugin.IsOnCooldown(caller, out var remainingCd))
+                    TPAPlugin.Msg(player, "Usage: /tpa <player>. Use /tpcancel to cancel your outgoing request.");
+                    if (TPAPlugin.IsOnCooldown(player, out var remainingCd))
                     {
-                        TPAPlugin.Msg(caller, $"Cooldown remaining: {remainingCd}s");
+                        TPAPlugin.Msg(player, $"Cooldown remaining: {remainingCd}s");
                     }
                 }
+
                 return;
             }
 
-            if (TPAPlugin.IsOnCooldown(caller, out int remain)) { TPAPlugin.Err(caller, $"Cooldown: {remain}s"); return; }
-
-            if (!TPAPlugin.TryFindPlayer(string.Join(" ", cmd), caller.CSteamID.m_SteamID, out var target, out var failure))
+            if (TPAPlugin.IsOnCooldown(player, out int cooldownRemaining))
             {
-                TPAPlugin.Err(caller, failure);
+                TPAPlugin.Err(player, $"Cooldown: {cooldownRemaining}s");
+                return;
+            }
+
+            if (!TPAPlugin.TryFindPlayer(string.Join(" ", command), player.CSteamID.m_SteamID, out var target, out var failure))
+            {
+                TPAPlugin.Err(player, failure);
                 return;
             }
 
             if (TPAPlugin.Pending.TryGetValue(target.CSteamID.m_SteamID, out var existing))
             {
-                var previousRequester = UnturnedPlayer.FromCSteamID(new Steamworks.CSteamID(existing.RequesterId));
+                var previousRequester = UnturnedPlayer.FromCSteamID(new CSteamID(existing.RequesterId));
                 existing.Cancel();
                 TPAPlugin.Pending.Remove(target.CSteamID.m_SteamID);
 
-                if (previousRequester != null && previousRequester.CSteamID.m_SteamID != caller.CSteamID.m_SteamID)
+                if (previousRequester != null && previousRequester.CSteamID.m_SteamID != player.CSteamID.m_SteamID)
                 {
                     TPAPlugin.Err(previousRequester, $"Your TPA request to {target.DisplayName} was replaced by another player.");
                 }
             }
 
-            var cfg = TPAPlugin.Config; ushort timeout = cfg?.RequestTimeoutSeconds ?? (ushort)60;
-            var req = new TPARequest(caller.CSteamID.m_SteamID, caller.DisplayName, caller.Position, timeout, () =>
+            var cfg = TPAPlugin.Config;
+            ushort timeout = cfg?.RequestTimeoutSeconds ?? (ushort)60;
+            var request = new TPARequest(player.CSteamID.m_SteamID, player.DisplayName, player.Position, timeout, () =>
             {
                 TPAPlugin.Pending.Remove(target.CSteamID.m_SteamID);
                 TPAPlugin.Err(target, "TPA request expired.");
-                TPAPlugin.Err(caller, "Your TPA request expired.");
+                TPAPlugin.Err(player, "Your TPA request expired.");
             });
-            TPAPlugin.Pending[target.CSteamID.m_SteamID] = req;
-            TPAPlugin.Msg(caller, $"Sent TPA to {target.DisplayName}. Expires in {timeout}s. Use /tpcancel to cancel.");
-            TPAPlugin.Msg(target, $"{caller.DisplayName} wants to teleport to you. Use /tpaccept or /tpdeny.");
-            TPAPlugin.Msg(target, $"Request will auto-expire in {req.GetSecondsRemaining()}s.");
-        }
-    }
-        private static readonly List<string> RequiredPermissions = new List<string> { "tpa.cancel" };
-        public List<string> Permissions => TPAPlugin.PermissionsEnabled ? RequiredPermissions : new List<string>();
-        public void Execute(IRocketPlayer ic, string[] cmd)
-        {
-            var caller = (UnturnedPlayer)ic;
-            var pair = TPAPlugin.Pending.FirstOrDefault(kv => kv.Value.RequesterId == caller.CSteamID.m_SteamID);
-            if (pair.Key == 0) { TPAPlugin.Err(caller, "You have no outgoing TPA request."); return; }
-        private static readonly List<string> RequiredPermissions = new List<string> { "tpa.accept" };
-        public List<string> Permissions => TPAPlugin.PermissionsEnabled ? RequiredPermissions : new List<string>();
-        public void Execute(IRocketPlayer ic, string[] cmd)
-        {
-            var target = (UnturnedPlayer)ic; // teleport destination
-            if (!TPAPlugin.Pending.TryGetValue(target.CSteamID.m_SteamID, out var req) || !req.IsActive) { TPAPlugin.Err(target, "No pending TPA."); return; }
-            var requester = UnturnedPlayer.FromCSteamID(new Steamworks.CSteamID(req.RequesterId));
-            if (requester == null) { TPAPlugin.Pending.Remove(target.CSteamID.m_SteamID); TPAPlugin.Err(target, "Requester offline."); return; }
-            var cfg = TPAPlugin.Config; int delay = cfg?.TeleportDelaySeconds ?? 3;
-            bool cancelOnMove = cfg?.CancelOnMove ?? true; float cancelDist = cfg?.CancelOnMoveDistance ?? 0.8f;
-    }
 
-        private static readonly List<string> RequiredPermissions = new List<string> { "tpa.deny" };
-        public List<string> Permissions => TPAPlugin.PermissionsEnabled ? RequiredPermissions : new List<string>();
-        public void Execute(IRocketPlayer ic, string[] cmd)
-        {
-            var target = (UnturnedPlayer)ic;
-            if (!TPAPlugin.Pending.TryGetValue(target.CSteamID.m_SteamID, out var req) || !req.IsActive) { TPAPlugin.Err(target, "No pending TPA."); return; }
-            req.Cancel(); TPAPlugin.Pending.Remove(target.CSteamID.m_SteamID);
-        public string Syntax => "/tpa <player>";
-        public List<string> Aliases => new List<string>();
-        public List<string> Permissions => new List<string> { "tpa.request" };
-        public void Execute(IRocketPlayer ic, string[] cmd)
-        {
-            var caller = (UnturnedPlayer)ic;
-            if (cmd.Length < 1) { TPAPlugin.Err(caller, "Usage: /tpa <player>"); return; }
-            if (TPAPlugin.IsOnCooldown(caller, out int remain)) { TPAPlugin.Err(caller, $"Cooldown: {remain}s"); return; }
-            if (!TPAPlugin.TryFindPlayer(string.Join(" ", cmd), out var target) || target.CSteamID.m_SteamID == caller.CSteamID.m_SteamID)
-            { TPAPlugin.Err(caller, "Player not found or invalid target."); return; }
-            if (TPAPlugin.Pending.TryGetValue(target.CSteamID.m_SteamID, out var existing)) { existing.Cancel(); TPAPlugin.Pending.Remove(target.CSteamID.m_SteamID); }
-            var cfg = (R.Plugins.GetPlugin("TPAPlugin") as TPAPlugin)?.Configuration.Instance; ushort timeout = cfg?.RequestTimeoutSeconds ?? (ushort)60;
-            var req = new TPARequest(caller.CSteamID.m_SteamID, caller.Position, timeout, () =>
-            {
-                TPAPlugin.Pending.Remove(target.CSteamID.m_SteamID);
-                TPAPlugin.Err(target, "TPA request expired."); TPAPlugin.Err(caller, "Your TPA request expired.");
-            });
-            TPAPlugin.Pending[target.CSteamID.m_SteamID] = req;
-            TPAPlugin.Msg(caller, $"Sent TPA to {target.DisplayName}. Expires in {timeout}s.");
-            TPAPlugin.Msg(target, $"{caller.DisplayName} wants to teleport to you. /tpaccept or /tpdeny.");
+            TPAPlugin.Pending[target.CSteamID.m_SteamID] = request;
+            TPAPlugin.Msg(player, $"Sent TPA to {target.DisplayName}. Expires in {timeout}s. Use /tpcancel to cancel.");
+            TPAPlugin.Msg(target, $"{player.DisplayName} wants to teleport to you. Use /tpaccept or /tpdeny.");
+            TPAPlugin.Msg(target, $"Request will auto-expire in {request.GetSecondsRemaining()}s.");
         }
     }
 
-    // /tpcancel
     public class CommandTPCancel : IRocketCommand
     {
+        private static readonly List<string> RequiredPermissions = new List<string> { "tpa.cancel" };
+
         public AllowedCaller AllowedCaller => AllowedCaller.Player;
         public string Name => "tpcancel";
         public string Help => "Cancel your outgoing TPA request";
         public string Syntax => "/tpcancel";
         public List<string> Aliases => new List<string> { "tpacancel" };
-        public List<string> Permissions => new List<string> { "tpa.cancel" };
-        public void Execute(IRocketPlayer ic, string[] cmd)
+        public List<string> Permissions => TPAPlugin.PermissionsEnabled ? RequiredPermissions : new List<string>();
+
+        public void Execute(IRocketPlayer caller, string[] command)
         {
-            var caller = (UnturnedPlayer)ic;
-            var pair = TPAPlugin.Pending.FirstOrDefault(kv => kv.Value.RequesterId == caller.CSteamID.m_SteamID);
-            if (pair.Key == 0) { TPAPlugin.Err(caller, "You have no outgoing TPA request."); return; }
-            pair.Value.Cancel(); TPAPlugin.Pending.Remove(pair.Key); TPAPlugin.Msg(caller, "TPA canceled.");
-            var target = UnturnedPlayer.FromCSteamID(new Steamworks.CSteamID(pair.Key)); if (target != null) TPAPlugin.Msg(target, $"{caller.DisplayName} canceled their TPA.");
+            var player = (UnturnedPlayer)caller;
+            var pair = TPAPlugin.Pending.FirstOrDefault(kv => kv.Value.RequesterId == player.CSteamID.m_SteamID);
+            if (pair.Key == 0)
+            {
+                TPAPlugin.Err(player, "You have no outgoing TPA request.");
+                return;
+            }
+
+            pair.Value.Cancel();
+            TPAPlugin.Pending.Remove(pair.Key);
+            TPAPlugin.Msg(player, "TPA canceled.");
+
+            var target = UnturnedPlayer.FromCSteamID(new CSteamID(pair.Key));
+            if (target != null)
+            {
+                TPAPlugin.Msg(target, $"{player.DisplayName} canceled their TPA.");
+            }
         }
     }
 
-    // /tpaccept
     public class CommandTPAccept : IRocketCommand
     {
+        private static readonly List<string> RequiredPermissions = new List<string> { "tpa.accept" };
+
         public AllowedCaller AllowedCaller => AllowedCaller.Player;
         public string Name => "tpaccept";
         public string Help => "Accept the pending TPA request";
         public string Syntax => "/tpaccept";
         public List<string> Aliases => new List<string>();
-        public List<string> Permissions => new List<string> { "tpa.accept" };
-        public void Execute(IRocketPlayer ic, string[] cmd)
+        public List<string> Permissions => TPAPlugin.PermissionsEnabled ? RequiredPermissions : new List<string>();
+
+        public void Execute(IRocketPlayer caller, string[] command)
         {
-            var target = (UnturnedPlayer)ic; // teleport destination
-            if (!TPAPlugin.Pending.TryGetValue(target.CSteamID.m_SteamID, out var req) || !req.IsActive) { TPAPlugin.Err(target, "No pending TPA."); return; }
-            var requester = UnturnedPlayer.FromCSteamID(new Steamworks.CSteamID(req.RequesterId));
-            if (requester == null) { TPAPlugin.Pending.Remove(target.CSteamID.m_SteamID); TPAPlugin.Err(target, "Requester offline."); return; }
-            var cfg = (R.Plugins.GetPlugin("TPAPlugin") as TPAPlugin)?.Configuration.Instance; int delay = cfg?.TeleportDelaySeconds ?? 3;
-            bool cancelOnMove = cfg?.CancelOnMove ?? true; float cancelDist = cfg?.CancelOnMoveDistance ?? 0.8f;
-            req.Cancel(); TPAPlugin.Pending.Remove(target.CSteamID.m_SteamID);
-            Vector3 startPos = requester.Position; TPAPlugin.Msg(requester, $"Teleporting to {target.DisplayName} in {delay}s. Don't move."); TPAPlugin.Msg(target, $"Accepting TPA from {requester.DisplayName}...");
-            Rocket.Core.Utils.TaskDispatcher.QueueOnMainThread(async () =>
+            var target = (UnturnedPlayer)caller;
+            if (!TPAPlugin.Pending.TryGetValue(target.CSteamID.m_SteamID, out var request) || !request.IsActive)
             {
-                int waited = 0; while (waited < delay)
+                TPAPlugin.Err(target, "No pending TPA.");
+                return;
+            }
+
+            var requester = UnturnedPlayer.FromCSteamID(new CSteamID(request.RequesterId));
+            if (requester == null)
+            {
+                TPAPlugin.Pending.Remove(target.CSteamID.m_SteamID);
+                TPAPlugin.Err(target, "Requester offline.");
+                request.Cancel();
+                return;
+            }
+
+            var cfg = TPAPlugin.Config;
+            int delay = cfg?.TeleportDelaySeconds ?? 3;
+            bool cancelOnMove = cfg?.CancelOnMove ?? true;
+            float cancelDistance = cfg?.CancelOnMoveDistance ?? 0.8f;
+
+            request.Cancel();
+            TPAPlugin.Pending.Remove(target.CSteamID.m_SteamID);
+
+            Vector3 startPos = requester.Position;
+            TPAPlugin.Msg(requester, $"Teleporting to {target.DisplayName} in {delay}s. Don't move.");
+            TPAPlugin.Msg(target, $"Accepting TPA from {requester.DisplayName}...");
+
+            TaskDispatcher.QueueOnMainThread(async () =>
+            {
+                int waited = 0;
+                while (waited < delay)
                 {
-                    await System.Threading.Tasks.Task.Delay(1000); waited++;
-                    if (cancelOnMove && Vector3.Distance(startPos, requester.Position) > cancelDist)
-                    { TPAPlugin.Err(requester, "Teleport canceled: you moved."); TPAPlugin.Msg(target, $"{requester.DisplayName}'s TP canceled (moved)."); return; }
+                    await Task.Delay(1000);
+                    waited++;
+
+                    if (cancelOnMove && Vector3.Distance(startPos, requester.Position) > cancelDistance)
+                    {
+                        Err(requester, "Teleport canceled: you moved.");
+                        Msg(target, $"{requester.DisplayName}'s teleport canceled (they moved).");
+                        return;
+                    }
                 }
-                var targetAgain = UnturnedPlayer.FromCSteamID(target.CSteamID); if (targetAgain == null) { TPAPlugin.Err(requester, "Target offline."); return; }
-                try { requester.Teleport(targetAgain.Position, targetAgain.Rotation); TPAPlugin.Msg(requester, $"Teleported to {targetAgain.DisplayName}."); TPAPlugin.Msg(targetAgain, $"{requester.DisplayName} teleported to you."); TPAPlugin.StartCooldown(requester); }
-                catch (Exception ex) { Rocket.Core.Logging.Logger.LogException(ex); TPAPlugin.Err(requester, "Teleport failed."); }
+
+                var updatedTarget = UnturnedPlayer.FromCSteamID(target.CSteamID);
+                if (updatedTarget == null)
+                {
+                    Err(requester, "Teleport failed: target offline.");
+                    return;
+                }
+
+                try
+                {
+                    requester.Teleport(updatedTarget.Position, updatedTarget.Rotation);
+                    Msg(requester, $"Teleported to {updatedTarget.DisplayName}.");
+                    Msg(updatedTarget, $"{requester.DisplayName} teleported to you.");
+                    StartCooldown(requester);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogException(ex);
+                    Err(requester, "Teleport failed.");
+                }
             });
         }
     }
 
-    // /tpdeny
     public class CommandTPDeny : IRocketCommand
     {
+        private static readonly List<string> RequiredPermissions = new List<string> { "tpa.deny" };
+
         public AllowedCaller AllowedCaller => AllowedCaller.Player;
         public string Name => "tpdeny";
         public string Help => "Deny the pending TPA request";
         public string Syntax => "/tpdeny";
         public List<string> Aliases => new List<string>();
-        public List<string> Permissions => new List<string> { "tpa.deny" };
-        public void Execute(IRocketPlayer ic, string[] cmd)
+        public List<string> Permissions => TPAPlugin.PermissionsEnabled ? RequiredPermissions : new List<string>();
+
+        public void Execute(IRocketPlayer caller, string[] command)
         {
-            var target = (UnturnedPlayer)ic;
-            if (!TPAPlugin.Pending.TryGetValue(target.CSteamID.m_SteamID, out var req) || !req.IsActive) { TPAPlugin.Err(target, "No pending TPA."); return; }
-            req.Cancel(); TPAPlugin.Pending.Remove(target.CSteamID.m_SteamID);
-            var requester = UnturnedPlayer.FromCSteamID(new Steamworks.CSteamID(req.RequesterId)); if (requester != null) TPAPlugin.Err(requester, $"Your TPA to {target.DisplayName} was denied.");
+            var target = (UnturnedPlayer)caller;
+            if (!TPAPlugin.Pending.TryGetValue(target.CSteamID.m_SteamID, out var request) || !request.IsActive)
+            {
+                TPAPlugin.Err(target, "No pending TPA.");
+                return;
+            }
+
+            request.Cancel();
+            TPAPlugin.Pending.Remove(target.CSteamID.m_SteamID);
+
+            var requester = UnturnedPlayer.FromCSteamID(new CSteamID(request.RequesterId));
+            if (requester != null)
+            {
+                TPAPlugin.Err(requester, $"Your TPA to {target.DisplayName} was denied.");
+            }
+
             TPAPlugin.Msg(target, "TPA denied.");
         }
     }
 }
-
-
-
