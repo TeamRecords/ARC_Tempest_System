@@ -12,6 +12,9 @@ using Rocket.Unturned.Player;
 using SDG.Unturned;
 using Steamworks;
 using UnityEngine;
+using Rocket.Unturned;
+
+using Logger = Rocket.Core.Logging.Logger;
 
 namespace ARC_TPA_Commands
 {
@@ -425,8 +428,8 @@ namespace ARC_TPA_Commands
 
                     if (cancelOnMove && Vector3.Distance(startPos, requester.Position) > cancelDistance)
                     {
-                        Err(requester, "Teleport canceled: you moved.");
-                        Msg(target, $"{requester.DisplayName}'s teleport canceled (they moved).");
+                        TPAPlugin.Err(requester, "Teleport canceled: you moved.");
+                        TPAPlugin.Msg(target, $"{requester.DisplayName}'s teleport canceled (they moved).");
                         return;
                     }
                 }
@@ -434,21 +437,21 @@ namespace ARC_TPA_Commands
                 var updatedTarget = UnturnedPlayer.FromCSteamID(target.CSteamID);
                 if (updatedTarget == null)
                 {
-                    Err(requester, "Teleport failed: target offline.");
+                    TPAPlugin.Err(requester, "Teleport failed: target offline.");
                     return;
                 }
 
                 try
                 {
                     requester.Teleport(updatedTarget.Position, updatedTarget.Rotation);
-                    Msg(requester, $"Teleported to {updatedTarget.DisplayName}.");
-                    Msg(updatedTarget, $"{requester.DisplayName} teleported to you.");
-                    StartCooldown(requester);
+                    TPAPlugin.Msg(requester, $"Teleported to {updatedTarget.DisplayName}.");
+                    TPAPlugin.Msg(updatedTarget, $"{requester.DisplayName} teleported to you.");
+                    TPAPlugin.StartCooldown(requester);
                 }
                 catch (Exception ex)
                 {
                     Logger.LogException(ex);
-                    Err(requester, "Teleport failed.");
+                    TPAPlugin.Err(requester, "Teleport failed.");
                 }
             });
         }
