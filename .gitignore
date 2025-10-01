@@ -1,0 +1,43 @@
+# Build results
+bin/
+obj/
+[Bb]uild/
+[Ll]og/
+[Rr]elease/
+[Dd]ebug/
+x64/
+x86/
+*.dll
+*.exe
+*.pdb
+
+# Visual Studio files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.vs/
+
+# Rider / JetBrains
+.idea/
+*.iml
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+*.nuspec
+*.lock.json
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Rocket/Unturned specific
+Rocket/Plugins/TPAPlugin/TPAPlugin.configuration.xml
+Rocket/Plugins/TPAPlugin/TPAPlugin.dll
+
+# Logs & crash reports
+*.log
+*.stackdump
+*.dmp
