@@ -49,10 +49,13 @@ namespace ARC_TPA_Commands
         internal static TempestPlugin Instance;
         internal static readonly Dictionary<ulong, TempestRequest> Pending = new Dictionary<ulong, TempestRequest>();
         internal static readonly Dictionary<ulong, DateTime> Cooldowns = new Dictionary<ulong, DateTime>();
-        internal static readonly List<string> NoPermissions = new List<string>();
-
         internal static TempestConfig Config => Instance?.Configuration.Instance;
         internal static bool PermissionsEnabled => Config?.Use_Permissions ?? false;
+
+        internal static List<string> ResolvePermissions(List<string> requiredPermissions)
+        {
+            return PermissionsEnabled ? requiredPermissions : null;
+        }
 
         protected override void Load()
         {
@@ -235,6 +238,107 @@ namespace ARC_TPA_Commands
             player = match;
             return true;
         }
+
+        internal static void ExecuteRequestCommand(UnturnedPlayer requester, string[] command, TempestRequestType type)
+        {
+            bool isSummon = type == TempestRequestType.SummonTarget;
+            ulong requesterId = requester.CSteamID.m_SteamID;
+
+            string usage = isSummon
+                ? "Usage: /tphere <player>. Use /tpcancel to cancel your outgoing request."
+                : "Usage: /tpa <player>. Use /tpcancel to cancel your outgoing request.";
+
+            if (command.Length < 1)
+            {
+                var status = Pending.FirstOrDefault(kv => kv.Value.RequesterId == requesterId && kv.Value.Type == type);
+                if (status.Key != 0 && status.Value.IsActive)
+                {
+                    var targetPlayer = UnturnedPlayer.FromCSteamID(new CSteamID(status.Key));
+                    var remaining = status.Value.GetSecondsRemaining();
+                    string pendingTargetName = targetPlayer != null ? targetPlayer.DisplayName : "(offline player)";
+                    string pendingLabel = isSummon ? "summon" : "teleport";
+                    Msg(requester, $"Pending {pendingLabel} request {(isSummon ? "for" : "to")} {pendingTargetName}. {remaining}s remaining. Use /tpcancel to cancel.");
+                }
+                else
+                {
+                    Msg(requester, usage);
+                    if (IsOnCooldown(requester, out var remainingCd))
+                    {
+                        Msg(requester, $"Cooldown remaining: {remainingCd}s");
+                    }
+                }
+
+                return;
+            }
+
+            if (IsOnCooldown(requester, out int cooldownRemaining))
+            {
+                Err(requester, $"Cooldown: {cooldownRemaining}s");
+                return;
+            }
+
+            if (!TryFindPlayer(string.Join(" ", command), requesterId, out var target, out var failure))
+            {
+                Err(requester, failure);
+                return;
+            }
+
+            ulong targetId = target.CSteamID.m_SteamID;
+
+            if (Pending.TryGetValue(targetId, out var existing))
+            {
+                var previousRequester = UnturnedPlayer.FromCSteamID(new CSteamID(existing.RequesterId));
+                existing.Cancel();
+                Pending.Remove(targetId);
+
+                if (previousRequester != null && previousRequester.CSteamID.m_SteamID != requesterId)
+                {
+                    Err(previousRequester, $"Your {GetRequestLabel(existing.Type)} for {target.DisplayName} was replaced by another player.");
+                }
+            }
+
+            var cfg = Config;
+            ushort timeout = cfg?.RequestTimeoutSeconds ?? (ushort)30;
+            string requesterName = requester.DisplayName;
+            string targetName = target.DisplayName;
+
+            string requesterExpired = isSummon
+                ? $"Your summon request for {targetName} expired."
+                : $"Your teleport request to {targetName} expired.";
+            string targetExpired = isSummon
+                ? $"The summon request from {requesterName} expired."
+                : $"The teleport request from {requesterName} expired.";
+
+            var request = new TempestRequest(requesterId, targetId, requesterName, type, timeout, () =>
+            {
+                Pending.Remove(targetId);
+
+                var targetOnline = UnturnedPlayer.FromCSteamID(new CSteamID(targetId));
+                if (targetOnline != null)
+                {
+                    Err(targetOnline, targetExpired);
+                }
+
+                var requesterOnline = UnturnedPlayer.FromCSteamID(new CSteamID(requesterId));
+                if (requesterOnline != null)
+                {
+                    Err(requesterOnline, requesterExpired);
+                }
+            });
+
+            Pending[targetId] = request;
+
+            string sentMessage = isSummon
+                ? $"Sent summon request for {target.DisplayName}. Expires in {timeout}s. Use /tpcancel to cancel."
+                : $"Sent teleport request to {target.DisplayName}. Expires in {timeout}s. Use /tpcancel to cancel.";
+            string targetNotice = isSummon
+                ? $"{requester.DisplayName} wants to teleport you to them. Use /tpaccept or /tpdeny."
+                : $"{requester.DisplayName} wants to teleport to you. Use /tpaccept or /tpdeny.";
+
+            Msg(requester, sentMessage);
+            Msg(target, targetNotice);
+            Msg(target, $"Request will auto-expire in {request.GetSecondsRemaining()}s.");
+        }
     }
 
     public class TempestRequest
@@ -298,85 +402,12 @@ namespace ARC_TPA_Commands
         public string Help => "Send a teleport request";
         public string Syntax => "/tpa <player>";
         public List<string> Aliases => new List<string>();
-        public List<string> Permissions => TempestPlugin.PermissionsEnabled ? RequiredPermissions : TempestPlugin.NoPermissions;
+        public List<string> Permissions => TempestPlugin.ResolvePermissions(RequiredPermissions);
 
         public void Execute(IRocketPlayer caller, string[] command)
         {
             var player = (UnturnedPlayer)caller;
-
-            if (command.Length < 1)
-            {
-                var status = TempestPlugin.Pending.FirstOrDefault(kv => kv.Value.RequesterId == player.CSteamID.m_SteamID && kv.Value.Type == TempestRequestType.TeleportToTarget);
-                if (status.Key != 0 && status.Value.IsActive)
-                {
-                    var targetPlayer = UnturnedPlayer.FromCSteamID(new CSteamID(status.Key));
-                    var remaining = status.Value.GetSecondsRemaining();
-                    string pendingTargetName = targetPlayer != null ? targetPlayer.DisplayName : "(offline player)";
-                    TempestPlugin.Msg(player, $"Pending teleport request to {pendingTargetName}. {remaining}s remaining. Use /tpcancel to cancel.");
-                }
-                else
-                {
-                    TempestPlugin.Msg(player, "Usage: /tpa <player>. Use /tpcancel to cancel your outgoing request.");
-                    if (TempestPlugin.IsOnCooldown(player, out var remainingCd))
-                    {
-                        TempestPlugin.Msg(player, $"Cooldown remaining: {remainingCd}s");
-                    }
-                }
-
-                return;
-            }
-
-            if (TempestPlugin.IsOnCooldown(player, out int cooldownRemaining))
-            {
-                TempestPlugin.Err(player, $"Cooldown: {cooldownRemaining}s");
-                return;
-            }
-
-            if (!TempestPlugin.TryFindPlayer(string.Join(" ", command), player.CSteamID.m_SteamID, out var target, out var failure))
-            {
-                TempestPlugin.Err(player, failure);
-                return;
-            }
-
-            if (TempestPlugin.Pending.TryGetValue(target.CSteamID.m_SteamID, out var existing))
-            {
-                var previousRequester = UnturnedPlayer.FromCSteamID(new CSteamID(existing.RequesterId));
-                existing.Cancel();
-                TempestPlugin.Pending.Remove(target.CSteamID.m_SteamID);
-
-                if (previousRequester != null && previousRequester.CSteamID.m_SteamID != player.CSteamID.m_SteamID)
-                {
-                    TempestPlugin.Err(previousRequester, $"Your {TempestPlugin.GetRequestLabel(existing.Type)} for {target.DisplayName} was replaced by another player.");
-                }
-            }
-
-            var cfg = TempestPlugin.Config;
-            ushort timeout = cfg?.RequestTimeoutSeconds ?? (ushort)30;
-            string targetName = target.DisplayName;
-            string requesterName = player.DisplayName;
-            ulong requesterId = player.CSteamID.m_SteamID;
-            ulong targetId = target.CSteamID.m_SteamID;
-            var request = new TempestRequest(requesterId, targetId, requesterName, TempestRequestType.TeleportToTarget, timeout, () =>
-            {
-                TempestPlugin.Pending.Remove(targetId);
-
-                var targetOnline = UnturnedPlayer.FromCSteamID(new CSteamID(targetId));
-                if (targetOnline != null)
-                {
-                    TempestPlugin.Err(targetOnline, $"The teleport request from {requesterName} expired.");
-                }
-
-                var requesterOnline = UnturnedPlayer.FromCSteamID(new CSteamID(requesterId));
-                if (requesterOnline != null)
-                {
-                    TempestPlugin.Err(requesterOnline, $"Your teleport request to {targetName} expired.");
-                }
-            });
-
-            TempestPlugin.Pending[targetId] = request;
-            TempestPlugin.Msg(player, $"Sent teleport request to {target.DisplayName}. Expires in {timeout}s. Use /tpcancel to cancel.");
-            TempestPlugin.Msg(target, $"{player.DisplayName} wants to teleport to you. Use /tpaccept or /tpdeny.");
-            TempestPlugin.Msg(target, $"Request will auto-expire in {request.GetSecondsRemaining()}s.");
+            TempestPlugin.ExecuteRequestCommand(player, command, TempestRequestType.TeleportToTarget);
         }
     }
 
@@ -389,85 +420,12 @@ namespace ARC_TPA_Commands
         public string Help => "Request another player to teleport to you";
         public string Syntax => "/tphere <player>";
         public List<string> Aliases => new List<string>();
-        public List<string> Permissions => TempestPlugin.PermissionsEnabled ? RequiredPermissions : TempestPlugin.NoPermissions;
+        public List<string> Permissions => TempestPlugin.ResolvePermissions(RequiredPermissions);
 
         public void Execute(IRocketPlayer caller, string[] command)
         {
             var player = (UnturnedPlayer)caller;
-
-            if (command.Length < 1)
-            {
-                var status = TempestPlugin.Pending.FirstOrDefault(kv => kv.Value.RequesterId == player.CSteamID.m_SteamID && kv.Value.Type == TempestRequestType.SummonTarget);
-                if (status.Key != 0 && status.Value.IsActive)
-                {
-                    var targetPlayer = UnturnedPlayer.FromCSteamID(new CSteamID(status.Key));
-                    var remaining = status.Value.GetSecondsRemaining();
-                    string pendingTargetName = targetPlayer != null ? targetPlayer.DisplayName : "(offline player)";
-                    TempestPlugin.Msg(player, $"Pending summon request for {pendingTargetName}. {remaining}s remaining. Use /tpcancel to cancel.");
-                }
-                else
-                {
-                    TempestPlugin.Msg(player, "Usage: /tphere <player>. Use /tpcancel to cancel your outgoing request.");
-                    if (TempestPlugin.IsOnCooldown(player, out var remainingCd))
-                    {
-                        TempestPlugin.Msg(player, $"Cooldown remaining: {remainingCd}s");
-                    }
-                }
-
-                return;
-            }
-
-            if (TempestPlugin.IsOnCooldown(player, out int cooldownRemaining))
-            {
-                TempestPlugin.Err(player, $"Cooldown: {cooldownRemaining}s");
-                return;
-            }
-
-            if (!TempestPlugin.TryFindPlayer(string.Join(" ", command), player.CSteamID.m_SteamID, out var target, out var failure))
-            {
-                TempestPlugin.Err(player, failure);
-                return;
-            }
-
-            if (TempestPlugin.Pending.TryGetValue(target.CSteamID.m_SteamID, out var existing))
-            {
-                var previousRequester = UnturnedPlayer.FromCSteamID(new CSteamID(existing.RequesterId));
-                existing.Cancel();
-                TempestPlugin.Pending.Remove(target.CSteamID.m_SteamID);
-
-                if (previousRequester != null && previousRequester.CSteamID.m_SteamID != player.CSteamID.m_SteamID)
-                {
-                    TempestPlugin.Err(previousRequester, $"Your {TempestPlugin.GetRequestLabel(existing.Type)} for {target.DisplayName} was replaced by another player.");
-                }
-            }
-
-            var cfg = TempestPlugin.Config;
-            ushort timeout = cfg?.RequestTimeoutSeconds ?? (ushort)30;
-            string targetName = target.DisplayName;
-            string requesterName = player.DisplayName;
-            ulong requesterId = player.CSteamID.m_SteamID;
-            ulong targetId = target.CSteamID.m_SteamID;
-            var request = new TempestRequest(requesterId, targetId, requesterName, TempestRequestType.SummonTarget, timeout, () =>
-            {
-                TempestPlugin.Pending.Remove(targetId);
-
-                var targetOnline = UnturnedPlayer.FromCSteamID(new CSteamID(targetId));
-                if (targetOnline != null)
-                {
-                    TempestPlugin.Err(targetOnline, $"The summon request from {requesterName} expired.");
-                }
-
-                var requesterOnline = UnturnedPlayer.FromCSteamID(new CSteamID(requesterId));
-                if (requesterOnline != null)
-                {
-                    TempestPlugin.Err(requesterOnline, $"Your summon request for {targetName} expired.");
-                }
-            });
-
-            TempestPlugin.Pending[targetId] = request;
-            TempestPlugin.Msg(player, $"Sent summon request for {target.DisplayName}. Expires in {timeout}s. Use /tpcancel to cancel.");
-            TempestPlugin.Msg(target, $"{player.DisplayName} wants to teleport you to them. Use /tpaccept or /tpdeny.");
-            TempestPlugin.Msg(target, $"Request will auto-expire in {request.GetSecondsRemaining()}s.");
+            TempestPlugin.ExecuteRequestCommand(player, command, TempestRequestType.SummonTarget);
         }
     }
 
@@ -480,7 +438,7 @@ namespace ARC_TPA_Commands
         public string Help => "Cancel your outgoing Tempest request";
         public string Syntax => "/tpcancel";
         public List<string> Aliases => new List<string> { "tpacancel" };
-        public List<string> Permissions => TempestPlugin.PermissionsEnabled ? RequiredPermissions : TempestPlugin.NoPermissions;
+        public List<string> Permissions => TempestPlugin.ResolvePermissions(RequiredPermissions);
 
         public void Execute(IRocketPlayer caller, string[] command)
         {
@@ -514,7 +472,7 @@ namespace ARC_TPA_Commands
         public string Help => "Accept the pending Tempest request";
         public string Syntax => "/tpaccept";
         public List<string> Aliases => new List<string>();
-        public List<string> Permissions => TempestPlugin.PermissionsEnabled ? RequiredPermissions : TempestPlugin.NoPermissions;
+        public List<string> Permissions => TempestPlugin.ResolvePermissions(RequiredPermissions);
 
         public void Execute(IRocketPlayer caller, string[] command)
         {
@@ -648,7 +606,7 @@ namespace ARC_TPA_Commands
         public string Help => "Deny the pending Tempest request";
         public string Syntax => "/tpdeny";
         public List<string> Aliases => new List<string>();
-        public List<string> Permissions => TempestPlugin.PermissionsEnabled ? RequiredPermissions : TempestPlugin.NoPermissions;
+        public List<string> Permissions => TempestPlugin.ResolvePermissions(RequiredPermissions);
 
         public void Execute(IRocketPlayer caller, string[] command)
         {
@@ -683,7 +641,7 @@ namespace ARC_TPA_Commands
         public string Help => "ARC Tempest System command list";
         public string Syntax => "/tempest cmds";
         public List<string> Aliases => new List<string>();
-        public List<string> Permissions => TempestPlugin.PermissionsEnabled ? RequiredPermissions : TempestPlugin.NoPermissions;
+        public List<string> Permissions => TempestPlugin.ResolvePermissions(RequiredPermissions);
 
         public void Execute(IRocketPlayer caller, string[] command)
         {
