@@ -49,6 +49,7 @@ namespace ARC_TPA_Commands
         internal static TempestPlugin Instance;
         internal static readonly Dictionary<ulong, TempestRequest> Pending = new Dictionary<ulong, TempestRequest>();
         internal static readonly Dictionary<ulong, DateTime> Cooldowns = new Dictionary<ulong, DateTime>();
+        internal static readonly List<string> NoPermissions = new List<string>();
 
         internal static TempestConfig Config => Instance?.Configuration.Instance;
         internal static bool PermissionsEnabled => Config?.Use_Permissions ?? false;
@@ -297,7 +298,7 @@ namespace ARC_TPA_Commands
         public string Help => "Send a teleport request";
         public string Syntax => "/tpa <player>";
         public List<string> Aliases => new List<string>();
-        public List<string> Permissions => TempestPlugin.PermissionsEnabled ? RequiredPermissions : null;
+        public List<string> Permissions => TempestPlugin.PermissionsEnabled ? RequiredPermissions : TempestPlugin.NoPermissions;
 
         public void Execute(IRocketPlayer caller, string[] command)
         {
@@ -388,7 +389,7 @@ namespace ARC_TPA_Commands
         public string Help => "Request another player to teleport to you";
         public string Syntax => "/tphere <player>";
         public List<string> Aliases => new List<string>();
-        public List<string> Permissions => TempestPlugin.PermissionsEnabled ? RequiredPermissions : null;
+        public List<string> Permissions => TempestPlugin.PermissionsEnabled ? RequiredPermissions : TempestPlugin.NoPermissions;
 
         public void Execute(IRocketPlayer caller, string[] command)
         {
@@ -479,7 +480,7 @@ namespace ARC_TPA_Commands
         public string Help => "Cancel your outgoing Tempest request";
         public string Syntax => "/tpcancel";
         public List<string> Aliases => new List<string> { "tpacancel" };
-        public List<string> Permissions => TempestPlugin.PermissionsEnabled ? RequiredPermissions : null;
+        public List<string> Permissions => TempestPlugin.PermissionsEnabled ? RequiredPermissions : TempestPlugin.NoPermissions;
 
         public void Execute(IRocketPlayer caller, string[] command)
         {
@@ -513,7 +514,7 @@ namespace ARC_TPA_Commands
         public string Help => "Accept the pending Tempest request";
         public string Syntax => "/tpaccept";
         public List<string> Aliases => new List<string>();
-        public List<string> Permissions => TempestPlugin.PermissionsEnabled ? RequiredPermissions : null;
+        public List<string> Permissions => TempestPlugin.PermissionsEnabled ? RequiredPermissions : TempestPlugin.NoPermissions;
 
         public void Execute(IRocketPlayer caller, string[] command)
         {
@@ -647,7 +648,7 @@ namespace ARC_TPA_Commands
         public string Help => "Deny the pending Tempest request";
         public string Syntax => "/tpdeny";
         public List<string> Aliases => new List<string>();
-        public List<string> Permissions => TempestPlugin.PermissionsEnabled ? RequiredPermissions : null;
+        public List<string> Permissions => TempestPlugin.PermissionsEnabled ? RequiredPermissions : TempestPlugin.NoPermissions;
 
         public void Execute(IRocketPlayer caller, string[] command)
         {
@@ -682,7 +683,7 @@ namespace ARC_TPA_Commands
         public string Help => "ARC Tempest System command list";
         public string Syntax => "/tempest cmds";
         public List<string> Aliases => new List<string>();
-        public List<string> Permissions => TempestPlugin.PermissionsEnabled ? RequiredPermissions : null;
+        public List<string> Permissions => TempestPlugin.PermissionsEnabled ? RequiredPermissions : TempestPlugin.NoPermissions;
 
         public void Execute(IRocketPlayer caller, string[] command)
         {
