@@ -310,8 +310,8 @@ namespace ARC_TPA_Commands
                 {
                     var targetPlayer = UnturnedPlayer.FromCSteamID(new CSteamID(status.Key));
                     var remaining = status.Value.GetSecondsRemaining();
-                    string targetName = targetPlayer != null ? targetPlayer.DisplayName : "(offline player)";
-                    TempestPlugin.Msg(player, $"Pending teleport request to {targetName}. {remaining}s remaining. Use /tpcancel to cancel.");
+                    string pendingTargetName = targetPlayer != null ? targetPlayer.DisplayName : "(offline player)";
+                    TempestPlugin.Msg(player, $"Pending teleport request to {pendingTargetName}. {remaining}s remaining. Use /tpcancel to cancel.");
                 }
                 else
                 {
@@ -401,8 +401,8 @@ namespace ARC_TPA_Commands
                 {
                     var targetPlayer = UnturnedPlayer.FromCSteamID(new CSteamID(status.Key));
                     var remaining = status.Value.GetSecondsRemaining();
-                    string targetName = targetPlayer != null ? targetPlayer.DisplayName : "(offline player)";
-                    TempestPlugin.Msg(player, $"Pending summon request for {targetName}. {remaining}s remaining. Use /tpcancel to cancel.");
+                    string pendingTargetName = targetPlayer != null ? targetPlayer.DisplayName : "(offline player)";
+                    TempestPlugin.Msg(player, $"Pending summon request for {pendingTargetName}. {remaining}s remaining. Use /tpcancel to cancel.");
                 }
                 else
                 {
