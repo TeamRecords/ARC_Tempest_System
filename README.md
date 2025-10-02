@@ -1,53 +1,25 @@
-# Unturned RocketMod TPA Plugin
+# ARC Tempest System
 
-A lightweight **Teleport Request (TPA) plugin** for Unturned servers running RocketMod.  
-It adds familiar multiplayer commands for requesting, accepting, denying, and canceling teleports between players.
+The **ARC Tempest System** is a modern teleport-request suite for RocketMod servers running the 2025-era build of Unturned (tested with version 3.25.9.0). It replaces the classic one-way TPA workflow with a richer, player-friendly toolset that keeps permissions optional and teleports reliable.
 
-## ✨ Features
-- `/tpa <player>` – request to teleport to another player  
-- `/tpaccept` – accept a pending request  
-- `/tpdeny` – deny a request  
-- `/tpcancel` – cancel your outgoing request
-- Type `/tpa` with no player name to see your pending request, expiry and cooldown at a glance.
-- Friendly error handling: automatically lists close name matches and blocks self-requests.
-- Configurable request timeout, teleport delay, cooldowns, “cancel-on-move” settings, and an optional permission gate.
-- Permissions are **disabled by default** so every player can use the system out of the box.
-- Minimal dependencies (just RocketMod and Unturned).
+## 💫 Commands
+- `/tpa <player>` – request to teleport yourself to another survivor.
+- `/tphere <player>` – request another survivor to teleport to you.
+- `/tpaccept` – accept the latest Tempest request that targets you.
+- `/tpdeny` – deny the latest Tempest request targeting you.
+- `/tpcancel` – cancel your own outgoing Tempest request.
+- `/tempest cmds` – view every Tempest command and its syntax in-game.
 
----
+Additional behavior:
+- Requests automatically expire after **30 seconds**.
+- Accepted teleports honour the configurable delay and cancel immediately if the travelling player moves too far (when `CancelOnMove` is enabled).
+- Cooldowns apply to the player who issued the request once the teleport completes.
 
-## 📦 Download & Build
-
-1. **Download the Source**  
-   Place the `TPAPlugin.cs` and `TPAPlugin.csproj` files in a folder named `TPAPlugin`.
-
-2. **Set Up References**  
-   Open `TPAPlugin.csproj` in Visual Studio (2022 recommended).  
-   Ensure the `HintPath` references point to your Unturned server’s libraries:  
-   - `Rocket.API.dll`, `Rocket.Core.dll`, `Rocket.Unturned.dll`  
-   - `Assembly-CSharp.dll`, `UnityEngine.dll`, `UnityEngine.CoreModule.dll`
-
-3. **Compile**  
-   - Select **Release** build.  
-   - Target **.NET Framework 3.5** (compatible with Unturned 3.x + RocketMod).  
-   - Build → Output: `bin/Release/TPAPlugin.dll`
-
-4. **Deploy to Server**  
-   - Upload `TPAPlugin.dll` to:  
-     ```
-     Rocket/Plugins/TPAPlugin/
-     ```
-   - Start or restart your Unturned server.  
-   - A config file (`TPAPlugin.configuration.xml`) will auto-generate, or you can use the template provided below.
-
----
-
-## ⚙️ Configuration (`TPAPlugin.configuration.xml`)
-
+## 🔧 Configuration (`TempestPlugin.configuration.xml`)
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
 <Configuration>
-  <RequestTimeoutSeconds>60</RequestTimeoutSeconds>
+  <RequestTimeoutSeconds>30</RequestTimeoutSeconds>
   <TeleportDelaySeconds>3</TeleportDelaySeconds>
   <CooldownSeconds>15</CooldownSeconds>
   <CancelOnMove>true</CancelOnMove>
@@ -56,4 +28,26 @@ It adds familiar multiplayer commands for requesting, accepting, denying, and ca
 </Configuration>
 ```
 
-* `Use_Permissions` toggles RocketMod permission checks for the commands. Leave it `false` (default) to allow everyone to use `/tpa` features, or set it to `true` if you want to require the `tpa.request`, `tpa.accept`, `tpa.deny`, and `tpa.cancel` permission nodes.
+Set `Use_Permissions` to `true` if you want RocketMod permission nodes; the system uses:
+- `tempest.tpa`
+- `tempest.tphere`
+- `tempest.accept`
+- `tempest.deny`
+- `tempest.cancel`
+- `tempest.cmds`
+
+Leave `Use_Permissions` as `false` (default) to allow everyone to use the Tempest commands without extra setup.
+
+## 🛠️ Building
+1. Open `ARC_TPA_Commands.sln` (or the `ARC_TPA_Commands.csproj`) in Visual Studio 2022 or newer.
+2. Ensure the RocketMod and Unturned assemblies in the project file point to your server installation (Unturned 3.25.9.0).
+3. Build the project in **Release** mode for .NET Framework **4.8**. The compiled DLL will appear in `bin/Release/ARC_TPA_Commands.dll`.
+4. Deploy the DLL to `Rocket/Plugins/ARC_Tempest/` (or another folder name of your choosing) on your server, then restart RocketMod to generate the configuration file.
+
+## ✅ Highlights
+- Unified handling for both classic teleport-to-player and summon-style requests.
+- Automatic cleanup when either player disconnects or the timer expires.
+- Informative feedback messages for every scenario (timeouts, denials, movement cancels, and more).
+- Designed for future expansion under the ARC Tempest banner.
+
+Feel free to extend the system with additional commands—Tempest is built to scale as new ideas arrive.

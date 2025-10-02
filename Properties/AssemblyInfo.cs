@@ -5,11 +5,11 @@ using System.Runtime.InteropServices;
 // General Information about an assembly is controlled through the following
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyTitle("ARC_TPA_Commands")]
-[assembly: AssemblyDescription("")]
+[assembly: AssemblyTitle("ARC Tempest System")]
+[assembly: AssemblyDescription("Teleport request command suite for Unturned 3.25.9.0")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("ARC_TPA_Commands")]
+[assembly: AssemblyProduct("ARC Tempest System")]
 [assembly: AssemblyCopyright("Copyright ©  2025")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
