@@ -54,7 +54,12 @@ namespace ARC_TPA_Commands
 
         internal static List<string> ResolvePermissions(List<string> requiredPermissions)
         {
-            return PermissionsEnabled ? requiredPermissions : null;
+            if (PermissionsEnabled)
+            {
+                return requiredPermissions ?? new List<string>();
+            }
+
+            return new List<string>();
         }
 
         protected override void Load()
