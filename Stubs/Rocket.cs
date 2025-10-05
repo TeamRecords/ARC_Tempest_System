@@ -5,6 +5,14 @@ using UnityEngine;
 
 namespace Rocket.API
 {
+    [AttributeUsage(AttributeTargets.Assembly)]
+    public sealed class PluginAttribute : Attribute
+    {
+        public string Name { get; set; }
+        public string Author { get; set; }
+        public string Version { get; set; }
+    }
+
     public interface IRocketPluginConfiguration
     {
         void LoadDefaults();
@@ -63,6 +71,17 @@ namespace Rocket.Core.Utils
 
 namespace Rocket.Core.Plugins
 {
+    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+    public sealed class RocketPluginAttribute : Attribute
+    {
+        public RocketPluginAttribute(Type pluginType)
+        {
+            PluginType = pluginType;
+        }
+
+        public Type PluginType { get; }
+    }
+
     public abstract class RocketPlugin<TConfiguration> : MonoBehaviour where TConfiguration : Rocket.API.IRocketPluginConfiguration, new()
     {
         protected RocketPlugin()
