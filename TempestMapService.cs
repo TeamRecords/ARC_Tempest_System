@@ -58,7 +58,7 @@ namespace ARC_TPA_Commands
             {
                 _httpClient = new HttpClient
                 {
-                    Timeout = TimeSpan.FromSeconds(Math.Max(10, _config.Map_Refresh_Interval_Seconds + 5))
+                    Timeout = TimeSpan.FromSeconds(Math.Max(10, (int)_config.Map_Refresh_Interval_Seconds + 5))
                 };
                 _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("ARC-Tempest-LiveSync/1.0");
                 _endpoint = parsedEndpoint;
@@ -277,7 +277,7 @@ namespace ARC_TPA_Commands
 
         private double GetRefreshIntervalMilliseconds()
         {
-            return Math.Max(1, _config.Map_Refresh_Interval_Seconds) * 1000d;
+            return Math.Max(1, (int)_config.Map_Refresh_Interval_Seconds) * 1000d;
         }
     }
 }
