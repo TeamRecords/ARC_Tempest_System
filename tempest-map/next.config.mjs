@@ -1,6 +1,4 @@
-import { defineConfig } from "next";
-
-const config = defineConfig({
+const config = {
   experimental: {
     turbo: true,
     serverActions: {
@@ -12,6 +10,6 @@ const config = defineConfig({
   typescript: {
     ignoreBuildErrors: false
   }
-});
+};
 
 export default config;
