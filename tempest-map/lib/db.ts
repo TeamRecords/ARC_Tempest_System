@@ -3,15 +3,68 @@ import mysql, { type Pool } from "mysql2/promise";
 export type TempestDatabase = Pool;
 
 let database: TempestDatabase | undefined;
+let databaseDisabled = parseBoolean(process.env.TEMPEST_USE_MOCK_DB);
+let disableReason: string | undefined;
+
+type MysqlError = NodeJS.ErrnoException & { fatal?: boolean };
 
 function parseBoolean(value: string | undefined): boolean {
   return value ? value.toLowerCase() === "true" : false;
 }
 
-const databaseDisabled = parseBoolean(process.env.TEMPEST_USE_MOCK_DB);
-
 export function isDatabaseEnabled(): boolean {
   return !databaseDisabled;
+}
+
+function shouldDisableDatabase(error: unknown): error is MysqlError {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const err = error as MysqlError;
+  if (typeof err.code === "string") {
+    if (err.code === "ECONNREFUSED" || err.code === "ENOTFOUND" || err.code === "ER_ACCESS_DENIED_ERROR") {
+      return true;
+    }
+  }
+
+  return Boolean(err.fatal);
+}
+
+export function disableDatabaseAccess(reason: string, error?: unknown): void {
+  if (databaseDisabled) {
+    return;
+  }
+
+  databaseDisabled = true;
+  disableReason = reason;
+
+  if (database) {
+    database
+      .end()
+      .catch(() => {
+        /* ignore */
+      });
+    database = undefined;
+  }
+
+  const details =
+    error instanceof Error
+      ? ` ${error.message}`
+      : error && typeof error === "object"
+        ? ` ${JSON.stringify(error)}`
+        : "";
+
+  console.error(`[TempestMap] Database access disabled: ${reason}.${details}`.trim());
+}
+
+export function handleDatabaseError(error: unknown, context: string): void {
+  if (!shouldDisableDatabase(error)) {
+    return;
+  }
+
+  const reason = `${context} failed due to a fatal database error`;
+  disableDatabaseAccess(reason, error);
 }
 
 function parseNumber(value: string | number | undefined, fallback: number): number {
@@ -21,7 +74,9 @@ function parseNumber(value: string | number | undefined, fallback: number): numb
 
 function createDatabase(): TempestDatabase {
   if (!isDatabaseEnabled()) {
-    throw new Error("Tempest map database access has been disabled via TEMPEST_USE_MOCK_DB");
+    throw new Error(
+      disableReason ?? "Tempest map database access has been disabled via TEMPEST_USE_MOCK_DB"
+    );
   }
 
   const host = process.env.MYSQL_HOST ?? "127.0.0.1";

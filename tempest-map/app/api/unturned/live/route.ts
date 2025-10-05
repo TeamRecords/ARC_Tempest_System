@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDatabase, isDatabaseEnabled } from "@/lib/db";
+import { getDatabase, handleDatabaseError, isDatabaseEnabled } from "@/lib/db";
 import { ensureLiveSchema } from "@/lib/schema";
 import type { PoolConnection } from "mysql2/promise";
 
@@ -161,8 +161,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Database disabled" }, { status: 503 });
   }
 
-  const pool = getDatabase();
-  const connection = await pool.getConnection();
+  let connection: PoolConnection;
+
+  try {
+    const pool = getDatabase();
+    connection = await pool.getConnection();
+  } catch (error) {
+    handleDatabaseError(error, "Connection acquisition");
+    console.error("[TempestMap] Failed to obtain database connection", error);
+    return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
+  }
 
   try {
     await connection.beginTransaction();
