@@ -54,12 +54,17 @@ namespace ARC_TPA_Commands
 
         internal static List<string> ResolvePermissions(List<string> requiredPermissions)
         {
-            if (PermissionsEnabled)
+            if (!PermissionsEnabled)
             {
-                return requiredPermissions ?? new List<string>();
+                // Returning null signals to RocketMod that the command requires no
+                // specific permission nodes. Supplying an empty list incorrectly
+                // causes RocketMod to fall back to its default permission checks,
+                // which prevents non-owners from executing the Tempest commands
+                // when permissions are globally disabled.
+                return null;
             }
 
-            return new List<string>();
+            return requiredPermissions ?? new List<string>();
         }
 
         protected override void Load()
