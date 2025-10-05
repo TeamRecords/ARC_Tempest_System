@@ -29,7 +29,7 @@ For local development without a MySQL server, set `TEMPEST_USE_MOCK_DB=true` to 
 ## Available scripts
 
 - `npm run dev` – run the development server with hot reload.
-- `npm run build` – compile for production.
+- `npm run build` – compile for production (automatically ensures the MySQL schema exists first).
 - `npm run start` – launch the production build.
 - `npm run lint` – run ESLint checks.
 

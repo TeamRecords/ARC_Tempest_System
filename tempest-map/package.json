@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbo",
+    "prebuild": "node scripts/apply-schema.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
