@@ -75,11 +75,22 @@ namespace ARC_TPA_Commands
                 // specific permission nodes. Supplying an empty list incorrectly
                 // causes RocketMod to fall back to its default permission checks,
                 // which prevents non-owners from executing the Tempest commands
-                // when permissions are globally disabled.
+                // when permissions are globally disabled. Rocket will treat the
+                // null value as "no permission required" and therefore skip any
+                // permission lookups that would otherwise trigger the "no
+                // permission" warning for normal players.
                 return null;
             }
 
-            return requiredPermissions ?? new List<string>();
+            // Ensure Rocket always receives a concrete list when permissions are
+            // enabled. Returning the same static list instance can allow third
+            // parties to mutate it, so provide a defensive copy instead.
+            if (requiredPermissions == null || requiredPermissions.Count == 0)
+            {
+                return new List<string>();
+            }
+
+            return new List<string>(requiredPermissions);
         }
 
         protected override void Load()
