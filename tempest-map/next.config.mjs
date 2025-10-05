@@ -1,6 +1,6 @@
 const config = {
   experimental: {
-    turbo: true,
+    turbo: {},
     serverActions: {
       bodySizeLimit: "1mb"
     }
