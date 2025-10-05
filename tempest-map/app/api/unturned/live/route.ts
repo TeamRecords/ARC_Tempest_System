@@ -66,7 +66,10 @@ function sanitisePlayer(player: IncomingPlayer, fallbackDate: Date) {
 }
 
 async function persistSnapshot(connection: PoolConnection, payload: IncomingPayload) {
-  await ensureLiveSchema(connection);
+  const schemaReady = await ensureLiveSchema(connection);
+  if (!schemaReady) {
+    throw new Error("Database schema is unavailable");
+  }
 
   const capturedAt = parseDate(payload.capturedAt, new Date());
   const mapName = payload.map?.name?.trim().length ? payload.map.name.trim() : "Unknown";

@@ -1,15 +1,15 @@
 import type { PoolConnection } from "mysql2/promise";
-import { getDatabase, handleDatabaseError, isDatabaseEnabled } from "@/lib/db";
+import { disableDatabaseAccess, getDatabase, handleDatabaseError, isDatabaseEnabled } from "@/lib/db";
 
 let schemaInitialised = false;
 
-export async function ensureLiveSchema(connection?: PoolConnection): Promise<void> {
+export async function ensureLiveSchema(connection?: PoolConnection): Promise<boolean> {
   if (schemaInitialised) {
-    return;
+    return true;
   }
 
   if (!isDatabaseEnabled()) {
-    return;
+    return false;
   }
 
   const pool = getDatabase();
@@ -18,8 +18,12 @@ export async function ensureLiveSchema(connection?: PoolConnection): Promise<voi
   try {
     conn = connection ?? (await pool.getConnection());
   } catch (error) {
+    const wasEnabled = isDatabaseEnabled();
     handleDatabaseError(error, "Schema initialisation");
-    throw error;
+    if (wasEnabled) {
+      console.error("[TempestMap] Failed to ensure database schema.", error);
+    }
+    return false;
   }
 
   try {
@@ -52,6 +56,15 @@ export async function ensureLiveSchema(connection?: PoolConnection): Promise<voi
     `);
 
     schemaInitialised = true;
+    return true;
+  } catch (error) {
+    const wasEnabled = isDatabaseEnabled();
+    handleDatabaseError(error, "Schema initialisation");
+    if (wasEnabled) {
+      console.error("[TempestMap] Failed to ensure database schema.", error);
+    }
+    disableDatabaseAccess("Schema migration failure", error);
+    return false;
   } finally {
     if (!connection && conn) {
       conn.release();
