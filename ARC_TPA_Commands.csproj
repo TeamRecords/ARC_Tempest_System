@@ -4,7 +4,7 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>a3966d7f-9bed-427f-a15e-e097b50871be</ProjectGuid>
+    <ProjectGuid>{A3966D7F-9BED-427F-A15E-E097B50871BE}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>ARC_TPA_Commands</RootNamespace>
@@ -12,7 +12,6 @@
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
-
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
@@ -33,87 +32,47 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="System"/>
-    
-    <Reference Include="System.Core"/>
-    <Reference Include="System.Xml.Linq"/>
-    <Reference Include="System.Data.DataSetExtensions"/>
-    
-    
-    <Reference Include="Microsoft.CSharp"/>
-    
-    <Reference Include="System.Data"/>
-    
-    <Reference Include="System.Net.Http"/>
-
-    <Reference Include="System.Web.Extensions"/>
-
-    <Reference Include="System.Xml"/>
-
-
-
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Xml" />
     <Reference Include="Rocket.API">
-
       <HintPath>C:\Program Files (x86)\Steam\steamapps\common\Unturned\Extras\Rocket.Unturned\Rocket.API.dll</HintPath>
-
       <Private>false</Private>
-
     </Reference>
-
     <Reference Include="Rocket.Core">
-
       <HintPath>C:\Program Files (x86)\Steam\steamapps\common\Unturned\Extras\Rocket.Unturned\Rocket.Core.dll</HintPath>
-
       <Private>false</Private>
-
     </Reference>
-
     <Reference Include="Rocket.Unturned">
-
       <HintPath>C:\Program Files (x86)\Steam\steamapps\common\Unturned\Extras\Rocket.Unturned\Rocket.Unturned.dll</HintPath>
-
       <Private>false</Private>
-
     </Reference>
-
     <Reference Include="Assembly-CSharp">
-
       <HintPath>C:\Program Files (x86)\Steam\steamapps\common\Unturned\Unturned_Data\Managed\Assembly-CSharp.dll</HintPath>
-
       <Private>false</Private>
-
     </Reference>
-
     <Reference Include="UnityEngine.CoreModule">
-
       <HintPath>C:\Program Files (x86)\Steam\steamapps\common\Unturned\Unturned_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
-
       <Private>false</Private>
-
     </Reference>
-
+    <Reference Include="com.rlabrecque.steamworks.net">
+      <HintPath>C:\Program Files (x86)\Steam\steamapps\common\Unturned\Unturned_Data\Managed\com.rlabrecque.steamworks.net.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
   <ItemGroup>
     <Compile Include="Class1.cs" />
     <Compile Include="TempestMapService.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
-      <Private>false</Private>
-    </Reference>
-
-    <Reference Include="com.rlabrecque.steamworks.net">
-
-      <HintPath>C:\Program Files (x86)\Steam\steamapps\common\Unturned\Unturned_Data\Managed\com.rlabrecque.steamworks.net.dll</HintPath>
-
-      <Private>false</Private>
-
-    </Reference>
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Include="Class1.cs" />
-    <Compile Include="Properties\AssemblyInfo.cs" />
-  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
- </Project>
+</Project>
 
 
 

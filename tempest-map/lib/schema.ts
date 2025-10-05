@@ -1,5 +1,5 @@
 import type { PoolConnection } from "mysql2/promise";
-import { getDatabase, isDatabaseEnabled } from "@/lib/db";
+import { getDatabase, handleDatabaseError, isDatabaseEnabled } from "@/lib/db";
 
 let schemaInitialised = false;
 
@@ -13,7 +13,14 @@ export async function ensureLiveSchema(connection?: PoolConnection): Promise<voi
   }
 
   const pool = getDatabase();
-  const conn = connection ?? (await pool.getConnection());
+  let conn: PoolConnection | undefined;
+
+  try {
+    conn = connection ?? (await pool.getConnection());
+  } catch (error) {
+    handleDatabaseError(error, "Schema initialisation");
+    throw error;
+  }
 
   try {
     await conn.query(`
@@ -46,7 +53,7 @@ export async function ensureLiveSchema(connection?: PoolConnection): Promise<voi
 
     schemaInitialised = true;
   } finally {
-    if (!connection) {
+    if (!connection && conn) {
       conn.release();
     }
   }

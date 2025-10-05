@@ -1,4 +1,4 @@
-import { getDatabase, isDatabaseEnabled } from "@/lib/db";
+import { getDatabase, handleDatabaseError, isDatabaseEnabled } from "@/lib/db";
 import { ensureLiveSchema } from "@/lib/schema";
 import type { RowDataPacket } from "mysql2";
 
@@ -138,6 +138,7 @@ export async function fetchPlayerSnapshot(): Promise<PlayerSnapshot> {
       players
     } satisfies PlayerSnapshot;
   } catch (error) {
+    handleDatabaseError(error, "Live snapshot query");
     console.error("[TempestMap] Failed to query database, returning mock snapshot.", error);
     return createMockSnapshot();
   }
