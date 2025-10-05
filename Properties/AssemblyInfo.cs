@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
 [assembly: AssemblyTitle("ARC Tempest System")]
-[assembly: AssemblyDescription("Teleport request command suite for Unturned 3.25.9.0")]
+[assembly: AssemblyDescription("Teleport and tactical map command suite for Unturned 3.25.9.0")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
 [assembly: AssemblyProduct("ARC Tempest System")]

@@ -41,3 +41,11 @@ Rocket/Plugins/TPAPlugin/TPAPlugin.dll
 *.log
 *.stackdump
 *.dmp
+
+# Web client artifacts
+tempest-map/node_modules/
+tempest-map/.next/
+tempest-map/.turbo/
+tempest-map/.eslintcache
+tempest-map/dist/
+tempest-map/build/

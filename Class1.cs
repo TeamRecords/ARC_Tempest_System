@@ -32,6 +32,12 @@ namespace ARC_TPA_Commands
         public bool CancelOnMove;
         public float CancelOnMoveDistance;
         public bool Use_Permissions;
+        public bool Enable_Map_Bridge;
+        public string Map_Connection_String;
+        public string Map_Provider_Invariant_Name;
+        public ushort Map_Refresh_Interval_Seconds;
+        public ushort Map_Player_Stale_Minutes;
+        public string Map_Share_Url;
 
         public void LoadDefaults()
         {
@@ -41,6 +47,12 @@ namespace ARC_TPA_Commands
             CancelOnMove = true;
             CancelOnMoveDistance = 0.8f;
             Use_Permissions = false;
+            Enable_Map_Bridge = false;
+            Map_Connection_String = "Server=localhost;Port=3306;Database=tempest_map;Uid=tempest;Pwd=ChangeMe!;SslMode=Preferred;";
+            Map_Provider_Invariant_Name = "MySql.Data.MySqlClient";
+            Map_Refresh_Interval_Seconds = 5;
+            Map_Player_Stale_Minutes = 2;
+            Map_Share_Url = "https://tempest.arcfoundation.net/map";
         }
     }
 
@@ -51,6 +63,9 @@ namespace ARC_TPA_Commands
         internal static readonly Dictionary<ulong, DateTime> Cooldowns = new Dictionary<ulong, DateTime>();
         internal static TempestConfig Config => Instance?.Configuration.Instance;
         internal static bool PermissionsEnabled => Config?.Use_Permissions ?? false;
+        internal static TempestMapService MapService { get; private set; }
+        internal static bool MapBridgeEnabled => Config?.Enable_Map_Bridge ?? false;
+        internal static string MapShareUrl => Config?.Map_Share_Url;
 
         internal static List<string> ResolvePermissions(List<string> requiredPermissions)
         {
@@ -70,13 +85,32 @@ namespace ARC_TPA_Commands
         protected override void Load()
         {
             Instance = this;
-            Logger.Log("[ARC Tempest] Loaded: /tpa, /tphere, /tpaccept, /tpdeny, /tpcancel, /tempest cmds");
+            Logger.Log("[ARC Tempest] Loaded: /tpa, /tphere, /tpaccept, /tpdeny, /tpcancel, /tempest cmds, /tmap");
+            if (MapBridgeEnabled)
+            {
+                MapService = new TempestMapService(Config);
+                MapService.Start();
+                if (!string.IsNullOrWhiteSpace(Config?.Map_Share_Url))
+                {
+                    Logger.Log($"[ARC Tempest] Tactical map live at {Config.Map_Share_Url}");
+                }
+            }
+            else
+            {
+                Logger.Log("[ARC Tempest] Tactical map bridge disabled. Enable Enable_Map_Bridge in the configuration to activate it.");
+            }
+
+            U.Events.OnPlayerConnected += OnPlayerConnected;
             U.Events.OnPlayerDisconnected += OnPlayerDisconnected;
         }
 
         protected override void Unload()
         {
+            U.Events.OnPlayerConnected -= OnPlayerConnected;
             U.Events.OnPlayerDisconnected -= OnPlayerDisconnected;
+
+            MapService?.Dispose();
+            MapService = null;
 
             foreach (var request in Pending.Values)
             {
@@ -96,6 +130,7 @@ namespace ARC_TPA_Commands
             }
 
             ulong steamId = player.CSteamID.m_SteamID;
+            MapService?.MarkPlayerOffline(steamId);
             var affectedTargets = Pending.Where(kv => kv.Key == steamId || kv.Value.RequesterId == steamId)
                                           .Select(kv => kv.Key)
                                           .ToList();
@@ -131,6 +166,16 @@ namespace ARC_TPA_Commands
             }
 
             Cooldowns.Remove(steamId);
+        }
+
+        private void OnPlayerConnected(UnturnedPlayer player)
+        {
+            if (player == null)
+            {
+                return;
+            }
+
+            MapService?.TrackPlayer(player);
         }
 
         internal static string GetRequestLabel(TempestRequestType type)
@@ -665,12 +710,48 @@ namespace ARC_TPA_Commands
                 TempestPlugin.Msg(player, "/tpaccept - accept the latest Tempest request targeting you.");
                 TempestPlugin.Msg(player, "/tpdeny - deny the latest Tempest request targeting you.");
                 TempestPlugin.Msg(player, "/tpcancel - cancel your outgoing Tempest request.");
+                TempestPlugin.Msg(player, "/tmap - receive a link to the live Tempest tactical map.");
                 TempestPlugin.Msg(player, "/tempest cmds - show this help menu.");
             }
             else
             {
                 TempestPlugin.Msg(player, "Usage: /tempest cmds");
             }
+        }
+    }
+
+    public class CommandTempestMap : IRocketCommand
+    {
+        private static readonly List<string> RequiredPermissions = new List<string> { "tempest.map" };
+
+        public AllowedCaller AllowedCaller => AllowedCaller.Player;
+        public string Name => "tmap";
+        public string Help => "Displays a link to the Tempest tactical map";
+        public string Syntax => "/tmap";
+        public List<string> Aliases => new List<string>();
+        public List<string> Permissions => TempestPlugin.ResolvePermissions(RequiredPermissions);
+
+        public void Execute(IRocketPlayer caller, string[] command)
+        {
+            if (!(caller is UnturnedPlayer player))
+            {
+                return;
+            }
+
+            if (!TempestPlugin.MapBridgeEnabled)
+            {
+                TempestPlugin.Err(player, "The tactical map is currently offline. Please contact a server administrator.");
+                return;
+            }
+
+            string mapUrl = TempestPlugin.MapShareUrl;
+            if (string.IsNullOrWhiteSpace(mapUrl))
+            {
+                TempestPlugin.Err(player, "The tactical map URL is not configured. Please contact a server administrator.");
+                return;
+            }
+
+            TempestPlugin.Msg(player, $"Tempest tactical map: {mapUrl}");
         }
     }
 }
