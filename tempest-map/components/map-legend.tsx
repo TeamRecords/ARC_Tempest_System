@@ -20,6 +20,15 @@ export default function MapLegend({ snapshot }: { snapshot: PlayerSnapshot }) {
         <p className="text-xs uppercase tracking-[0.35em] text-slate-400">
           Last sync · {formatRelative(snapshot.metadata.lastSyncedUtc)} · Level size {snapshot.metadata.levelSize}
         </p>
+        {snapshot.source === "mock" && (
+          <div className="mt-4 space-y-1 rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4 text-[0.65rem] uppercase tracking-[0.3em] text-amber-200">
+            <p className="font-semibold text-amber-100">Operating on mock telemetry</p>
+            <p className="normal-case text-[0.7rem] tracking-normal text-amber-100/80">
+              {snapshot.disableReason ??
+                "The Tempest database is currently unavailable. Live data will resume once connectivity is restored."}
+            </p>
+          </div>
+        )}
         {snapshot.metadata.shareUrl && (
           <Link
             href={snapshot.metadata.shareUrl}

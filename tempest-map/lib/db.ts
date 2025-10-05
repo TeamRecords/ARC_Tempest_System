@@ -16,6 +16,10 @@ export function isDatabaseEnabled(): boolean {
   return !databaseDisabled;
 }
 
+export function getDatabaseDisableReason(): string | undefined {
+  return disableReason;
+}
+
 function shouldDisableDatabase(error: unknown): error is MysqlError {
   if (!error || typeof error !== "object") {
     return false;

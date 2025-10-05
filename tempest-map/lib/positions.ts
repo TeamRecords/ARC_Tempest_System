@@ -1,4 +1,9 @@
-import { getDatabase, handleDatabaseError, isDatabaseEnabled } from "@/lib/db";
+import {
+  getDatabase,
+  getDatabaseDisableReason,
+  handleDatabaseError,
+  isDatabaseEnabled
+} from "@/lib/db";
 import { ensureLiveSchema } from "@/lib/schema";
 import type { RowDataPacket } from "mysql2";
 
@@ -27,9 +32,11 @@ export type MapMetadata = {
 export type PlayerSnapshot = {
   metadata: MapMetadata;
   players: PlayerPosition[];
+  source: "database" | "mock";
+  disableReason?: string;
 };
 
-function createMockSnapshot(): PlayerSnapshot {
+function createMockSnapshot(reason?: string): PlayerSnapshot {
   const now = new Date();
   return {
     metadata: {
@@ -59,7 +66,9 @@ function createMockSnapshot(): PlayerSnapshot {
         isOnline: false,
         lastSeenUtc: new Date(now.getTime() - 120_000).toISOString()
       }
-    ]
+    ],
+    source: "mock",
+    disableReason: reason
   } satisfies PlayerSnapshot;
 }
 
@@ -94,14 +103,14 @@ function toIsoString(value: string | null | undefined): string {
 
 export async function fetchPlayerSnapshot(): Promise<PlayerSnapshot> {
   if (!isDatabaseEnabled()) {
-    return createMockSnapshot();
+    return createMockSnapshot(getDatabaseDisableReason());
   }
 
   try {
     const pool = getDatabase();
     const schemaReady = await ensureLiveSchema();
     if (!schemaReady) {
-      return createMockSnapshot();
+      return createMockSnapshot(getDatabaseDisableReason());
     }
 
     const [metadataRows] = await pool.query<MapMetadataRow[]>(
@@ -138,11 +147,12 @@ export async function fetchPlayerSnapshot(): Promise<PlayerSnapshot> {
 
     return {
       metadata,
-      players
+      players,
+      source: "database"
     } satisfies PlayerSnapshot;
   } catch (error) {
     handleDatabaseError(error, "Live snapshot query");
     console.error("[TempestMap] Failed to query database, returning mock snapshot.", error);
-    return createMockSnapshot();
+    return createMockSnapshot(getDatabaseDisableReason());
   }
 }
