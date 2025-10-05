@@ -1,5 +1,4 @@
-import { withConnection } from "@/lib/db";
-import type { RowDataPacket } from "mysql2";
+import { getDatabase } from "@/lib/db";
 
 export type PlayerPosition = {
   steamId: string;
@@ -54,13 +53,13 @@ const MOCK_SNAPSHOT: PlayerSnapshot = {
   ]
 };
 
-type MapMetadataRow = RowDataPacket & {
+type MapMetadataRow = {
   map_name: string;
   level_size: number;
-  last_synced_utc: Date | string | null;
+  last_synced_utc: string | null;
 };
 
-type PlayerRow = RowDataPacket & {
+type PlayerRow = {
   steam_id: string;
   character_name: string;
   group_name: string | null;
@@ -69,16 +68,12 @@ type PlayerRow = RowDataPacket & {
   position_z: number;
   rotation_y: number;
   is_online: number;
-  last_seen_utc: Date | string;
+  last_seen_utc: string;
 };
 
-function toIsoString(value: Date | string | null | undefined): string {
+function toIsoString(value: string | null | undefined): string {
   if (!value) {
     return new Date().toISOString();
-  }
-
-  if (value instanceof Date) {
-    return value.toISOString();
   }
 
   const parsed = new Date(value);
@@ -87,38 +82,40 @@ function toIsoString(value: Date | string | null | undefined): string {
 
 export async function fetchPlayerSnapshot(): Promise<PlayerSnapshot> {
   try {
-    return await withConnection(async (connection) => {
-      const [metadataRows] = await connection.query<MapMetadataRow[]>(
-        "SELECT map_name, level_size, last_synced_utc FROM tempest_map_metadata WHERE id = 1 LIMIT 1"
-      );
+    const db = getDatabase();
 
-      const [playerRows] = await connection.query<PlayerRow[]>(
+    const metadataRow = db
+      .prepare("SELECT map_name, level_size, last_synced_utc FROM tempest_map_metadata WHERE id = 1 LIMIT 1")
+      .get() as MapMetadataRow | undefined;
+
+    const playerRows = db
+      .prepare(
         "SELECT steam_id, character_name, group_name, position_x, position_y, position_z, rotation_y, is_online, last_seen_utc FROM tempest_player_positions ORDER BY is_online DESC, last_seen_utc DESC"
-      );
+      )
+      .all() as PlayerRow[];
 
-      const metadata = metadataRows?.[0]
-        ? {
-            mapName: metadataRows[0].map_name,
-            levelSize: metadataRows[0].level_size,
-            lastSyncedUtc: toIsoString(metadataRows[0].last_synced_utc)
-          }
-        : MOCK_SNAPSHOT.metadata;
+    const metadata = metadataRow
+      ? {
+          mapName: metadataRow.map_name,
+          levelSize: metadataRow.level_size,
+          lastSyncedUtc: toIsoString(metadataRow.last_synced_utc)
+        }
+      : MOCK_SNAPSHOT.metadata;
 
-      const players: PlayerPosition[] = playerRows.map((row) => ({
-        steamId: row.steam_id,
-        characterName: row.character_name,
-        groupName: row.group_name,
-        position: { x: row.position_x, y: row.position_y, z: row.position_z },
-        rotationY: row.rotation_y,
-        isOnline: row.is_online === 1,
-        lastSeenUtc: toIsoString(row.last_seen_utc)
-      }));
+    const players: PlayerPosition[] = playerRows.map((row) => ({
+      steamId: row.steam_id,
+      characterName: row.character_name,
+      groupName: row.group_name,
+      position: { x: row.position_x, y: row.position_y, z: row.position_z },
+      rotationY: row.rotation_y,
+      isOnline: row.is_online === 1,
+      lastSeenUtc: toIsoString(row.last_seen_utc)
+    }));
 
-      return {
-        metadata,
-        players
-      } satisfies PlayerSnapshot;
-    });
+    return {
+      metadata,
+      players
+    } satisfies PlayerSnapshot;
   } catch (error) {
     console.error("[TempestMap] Failed to query database, returning mock snapshot.", error);
     return MOCK_SNAPSHOT;
