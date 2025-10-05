@@ -19,9 +19,12 @@ MYSQL_USER=tempest
 MYSQL_PASSWORD=ChangeMe!
 MYSQL_DATABASE=tempest_map
 LIVE_SYNC_SERVER_KEY=ChangeMe!
+TEMPEST_USE_MOCK_DB=false
 ```
 
 The Rocket plugin will stream telemetry to `POST /api/unturned/live` with the `X-Server-Key` header set to `LIVE_SYNC_SERVER_KEY`. The Next.js `GET /api/live` endpoint (and the `/map` page) query the same database to power the Leaflet dashboard.
+
+For local development without a MySQL server, set `TEMPEST_USE_MOCK_DB=true` to bypass all database access and serve the built-in mock telemetry while keeping the ingest API disabled. This prevents noisy connection errors when the database is intentionally unavailable.
 
 ## Available scripts
 

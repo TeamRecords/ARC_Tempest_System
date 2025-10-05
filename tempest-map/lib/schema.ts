@@ -1,10 +1,14 @@
 import type { PoolConnection } from "mysql2/promise";
-import { getDatabase } from "@/lib/db";
+import { getDatabase, isDatabaseEnabled } from "@/lib/db";
 
 let schemaInitialised = false;
 
 export async function ensureLiveSchema(connection?: PoolConnection): Promise<void> {
   if (schemaInitialised) {
+    return;
+  }
+
+  if (!isDatabaseEnabled()) {
     return;
   }
 

@@ -4,12 +4,26 @@ export type TempestDatabase = Pool;
 
 let database: TempestDatabase | undefined;
 
+function parseBoolean(value: string | undefined): boolean {
+  return value ? value.toLowerCase() === "true" : false;
+}
+
+const databaseDisabled = parseBoolean(process.env.TEMPEST_USE_MOCK_DB);
+
+export function isDatabaseEnabled(): boolean {
+  return !databaseDisabled;
+}
+
 function parseNumber(value: string | number | undefined, fallback: number): number {
   const parsed = typeof value === "string" ? Number.parseInt(value, 10) : value;
   return Number.isFinite(parsed as number) ? (parsed as number) : fallback;
 }
 
 function createDatabase(): TempestDatabase {
+  if (!isDatabaseEnabled()) {
+    throw new Error("Tempest map database access has been disabled via TEMPEST_USE_MOCK_DB");
+  }
+
   const host = process.env.MYSQL_HOST ?? "127.0.0.1";
   const port = parseNumber(process.env.MYSQL_PORT, 3306);
   const user = process.env.MYSQL_USER ?? "tempest";
