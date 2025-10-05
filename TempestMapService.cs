@@ -219,11 +219,14 @@ namespace ARC_TPA_Commands
 
         private object BuildSnapshot()
         {
-            var clients = Provider.clients ?? new List<SteamPlayer>();
-            var players = new List<object>(clients.Count);
+            var clientsSnapshot = Provider.clients != null
+                ? Provider.clients.ToArray()
+                : Array.Empty<SteamPlayer>();
+
+            var players = new List<object>(clientsSnapshot.Length);
             DateTime capturedAt = DateTime.UtcNow;
 
-            foreach (var steamPlayer in clients.Where(p => p != null && p.player != null))
+            foreach (var steamPlayer in clientsSnapshot.Where(p => p != null && p.player != null))
             {
                 try
                 {
