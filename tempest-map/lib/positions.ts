@@ -1,4 +1,5 @@
 import { withConnection } from "@/lib/db";
+import type { RowDataPacket } from "mysql2";
 
 export type PlayerPosition = {
   steamId: string;
@@ -53,30 +54,45 @@ const MOCK_SNAPSHOT: PlayerSnapshot = {
   ]
 };
 
+type MapMetadataRow = RowDataPacket & {
+  map_name: string;
+  level_size: number;
+  last_synced_utc: Date | string | null;
+};
+
+type PlayerRow = RowDataPacket & {
+  steam_id: string;
+  character_name: string;
+  group_name: string | null;
+  position_x: number;
+  position_y: number;
+  position_z: number;
+  rotation_y: number;
+  is_online: number;
+  last_seen_utc: Date | string;
+};
+
+function toIsoString(value: Date | string | null | undefined): string {
+  if (!value) {
+    return new Date().toISOString();
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+}
+
 export async function fetchPlayerSnapshot(): Promise<PlayerSnapshot> {
   try {
     return await withConnection(async (connection) => {
-      const [metadataRows] = await connection.query<
-        {
-          map_name: string;
-          level_size: number;
-          last_synced_utc: Date;
-        }[]
-      >("SELECT map_name, level_size, last_synced_utc FROM tempest_map_metadata WHERE id = 1 LIMIT 1");
+      const [metadataRows] = await connection.query<MapMetadataRow[]>(
+        "SELECT map_name, level_size, last_synced_utc FROM tempest_map_metadata WHERE id = 1 LIMIT 1"
+      );
 
-      const [playerRows] = await connection.query<
-        {
-          steam_id: string;
-          character_name: string;
-          group_name: string | null;
-          position_x: number;
-          position_y: number;
-          position_z: number;
-          rotation_y: number;
-          is_online: number;
-          last_seen_utc: Date;
-        }[]
-      >(
+      const [playerRows] = await connection.query<PlayerRow[]>(
         "SELECT steam_id, character_name, group_name, position_x, position_y, position_z, rotation_y, is_online, last_seen_utc FROM tempest_player_positions ORDER BY is_online DESC, last_seen_utc DESC"
       );
 
@@ -84,7 +100,7 @@ export async function fetchPlayerSnapshot(): Promise<PlayerSnapshot> {
         ? {
             mapName: metadataRows[0].map_name,
             levelSize: metadataRows[0].level_size,
-            lastSyncedUtc: metadataRows[0].last_synced_utc.toISOString()
+            lastSyncedUtc: toIsoString(metadataRows[0].last_synced_utc)
           }
         : MOCK_SNAPSHOT.metadata;
 
@@ -95,7 +111,7 @@ export async function fetchPlayerSnapshot(): Promise<PlayerSnapshot> {
         position: { x: row.position_x, y: row.position_y, z: row.position_z },
         rotationY: row.rotation_y,
         isOnline: row.is_online === 1,
-        lastSeenUtc: row.last_seen_utc.toISOString()
+        lastSeenUtc: toIsoString(row.last_seen_utc)
       }));
 
       return {
