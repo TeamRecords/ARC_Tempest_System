@@ -13,11 +13,11 @@ npm run dev
 The development server runs on <http://localhost:3000> by default. Configure the following environment variables to connect both the ingest API and the tactical UI to your MySQL instance:
 
 ```
-MYSQL_HOST=127.0.0.1
-MYSQL_PORT=3306
-MYSQL_USER=tempest
-MYSQL_PASSWORD=ChangeMe!
-MYSQL_DATABASE=tempest_map
+TEMPEST_MAP_DB_HOST=127.0.0.1
+TEMPEST_MAP_DB_PORT=3306
+TEMPEST_MAP_DB_USER=tempest
+TEMPEST_MAP_DB_PASSWORD=ChangeMe!
+TEMPEST_MAP_DB_NAME=tempest_map
 LIVE_SYNC_SERVER_KEY=ChangeMe!
 TEMPEST_USE_MOCK_DB=false
 ```

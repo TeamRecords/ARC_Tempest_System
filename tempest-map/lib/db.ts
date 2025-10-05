@@ -83,12 +83,27 @@ function createDatabase(): TempestDatabase {
     );
   }
 
-  const host = process.env.MYSQL_HOST ?? "127.0.0.1";
-  const port = parseNumber(process.env.MYSQL_PORT, 3306);
-  const user = process.env.MYSQL_USER ?? "tempest";
-  const password = process.env.MYSQL_PASSWORD ?? "";
-  const databaseName = process.env.MYSQL_DATABASE ?? "tempest_map";
-  const connectionLimit = parseNumber(process.env.MYSQL_POOL_LIMIT, 10);
+  const host =
+    process.env.TEMPEST_MAP_DB_HOST?.trim() ||
+    process.env.MYSQL_HOST?.trim() ||
+    "127.0.0.1";
+  const port = parseNumber(process.env.TEMPEST_MAP_DB_PORT ?? process.env.MYSQL_PORT, 3306);
+  const user =
+    process.env.TEMPEST_MAP_DB_USER?.trim() ||
+    process.env.MYSQL_USER?.trim() ||
+    "tempest";
+  const password =
+    process.env.TEMPEST_MAP_DB_PASSWORD ??
+    process.env.MYSQL_PASSWORD ??
+    "";
+  const databaseName =
+    process.env.TEMPEST_MAP_DB_NAME?.trim() ||
+    process.env.MYSQL_DATABASE?.trim() ||
+    "tempest_map";
+  const connectionLimit = parseNumber(
+    process.env.TEMPEST_MAP_DB_POOL_SIZE ?? process.env.MYSQL_POOL_LIMIT,
+    10
+  );
 
   return mysql.createPool({
     host,
