@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDatabase } from "@/lib/db";
+import { getDatabase, isDatabaseEnabled } from "@/lib/db";
 import { ensureLiveSchema } from "@/lib/schema";
 import type { PoolConnection } from "mysql2/promise";
 
@@ -154,6 +154,11 @@ export async function POST(request: NextRequest) {
 
   if (!payload || typeof payload !== "object") {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+  }
+
+  if (!isDatabaseEnabled()) {
+    console.error("[TempestMap] Live sync skipped: database disabled via TEMPEST_USE_MOCK_DB.");
+    return NextResponse.json({ error: "Database disabled" }, { status: 503 });
   }
 
   const pool = getDatabase();
