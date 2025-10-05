@@ -1,0 +1,49 @@
+import type { PoolConnection } from "mysql2/promise";
+import { getDatabase } from "@/lib/db";
+
+let schemaInitialised = false;
+
+export async function ensureLiveSchema(connection?: PoolConnection): Promise<void> {
+  if (schemaInitialised) {
+    return;
+  }
+
+  const pool = getDatabase();
+  const conn = connection ?? (await pool.getConnection());
+
+  try {
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS map_state (
+        id TINYINT UNSIGNED NOT NULL PRIMARY KEY,
+        map_name VARCHAR(120) NOT NULL,
+        level_size INT NOT NULL,
+        last_synced_utc DATETIME NOT NULL,
+        share_url VARCHAR(255) NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS players (
+        steam_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+        character_name VARCHAR(120) NOT NULL,
+        group_name VARCHAR(120) NULL,
+        position_x DOUBLE NOT NULL,
+        position_y DOUBLE NOT NULL,
+        position_z DOUBLE NOT NULL,
+        rotation_y DOUBLE NOT NULL,
+        health TINYINT UNSIGNED NOT NULL,
+        is_online TINYINT(1) NOT NULL DEFAULT 0,
+        last_seen_utc DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        INDEX idx_players_last_seen (last_seen_utc),
+        INDEX idx_players_online (is_online)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
+    schemaInitialised = true;
+  } finally {
+    if (!connection) {
+      conn.release();
+    }
+  }
+}

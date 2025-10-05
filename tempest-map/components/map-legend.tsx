@@ -1,4 +1,5 @@
 import { formatDistanceToNowStrict } from "date-fns";
+import Link from "next/link";
 import clsx from "clsx";
 import type { PlayerSnapshot } from "@/lib/positions";
 
@@ -19,6 +20,16 @@ export default function MapLegend({ snapshot }: { snapshot: PlayerSnapshot }) {
         <p className="text-xs uppercase tracking-[0.35em] text-slate-400">
           Last sync · {formatRelative(snapshot.metadata.lastSyncedUtc)} · Level size {snapshot.metadata.levelSize}
         </p>
+        {snapshot.metadata.shareUrl && (
+          <Link
+            href={snapshot.metadata.shareUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 inline-flex text-[0.65rem] uppercase tracking-[0.35em] text-brand-200 transition hover:text-brand-100"
+          >
+            Open public map ↗
+          </Link>
+        )}
       </div>
       <div className="space-y-3">
         <h3 className="text-xs uppercase tracking-[0.35em] text-slate-400">Active Squads</h3>
@@ -46,8 +57,21 @@ export default function MapLegend({ snapshot }: { snapshot: PlayerSnapshot }) {
                     {player.groupName ?? "Lone Wolf"}
                   </span>
                 </div>
-                <div className="text-right text-xs text-slate-300">
-                  <div>{isOnline ? "Online" : "Offline"}</div>
+                <div className="flex flex-col items-end gap-1 text-right text-xs text-slate-300">
+                  <div className="flex items-center gap-2 text-[0.7rem] uppercase tracking-[0.4em]">
+                    <span className={clsx("inline-flex h-2 w-2 rounded-full", isOnline ? "bg-brand-300" : "bg-slate-500")} />
+                    {isOnline ? "Online" : "Offline"}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[0.65rem] uppercase tracking-[0.4em] text-slate-500">Health</span>
+                    <div className="flex h-2 w-20 overflow-hidden rounded-full border border-white/10">
+                      <div
+                        className={clsx("h-full transition", isOnline ? "bg-brand-300" : "bg-slate-600")}
+                        style={{ width: `${Math.min(100, Math.max(0, player.health))}%` }}
+                      />
+                    </div>
+                    <span className="text-[0.65rem] text-slate-200">{player.health}%</span>
+                  </div>
                   <div className="text-[0.7rem] uppercase tracking-[0.4em] text-slate-500">
                     {formatRelative(player.lastSeenUtc)}
                   </div>
@@ -62,7 +86,7 @@ export default function MapLegend({ snapshot }: { snapshot: PlayerSnapshot }) {
         <p>
           Positions are expressed using the Unturned world coordinate system. Hover or tap on a player marker to reveal
           exact values alongside facing direction. Data is refreshed on a {Number(process.env.TEMPEST_MAP_REFRESH_SECONDS ?? 5)}
-          second cadence directly from the Tempest plugin bridge.
+          second cadence directly from the Tempest live sync bridge.
         </p>
       </div>
     </div>

@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
-using System.Data;
-using System.Data.Common;
 using System.Linq;
+using System.Net.Http;
+using System.Text;
+using System.Threading.Tasks;
 using System.Timers;
+using System.Web.Script.Serialization;
 using Rocket.Core.Logging;
 using Rocket.Unturned.Player;
 using SDG.Unturned;
@@ -16,8 +18,11 @@ namespace ARC_TPA_Commands
         private readonly TempestConfig _config;
         private readonly Timer _timer;
         private readonly object _syncRoot = new object();
-        private DbProviderFactory _factory;
         private bool _isRunning;
+        private bool _isSending;
+        private HttpClient _httpClient;
+        private Uri _endpoint;
+        private readonly JavaScriptSerializer _serializer;
 
         internal TempestMapService(TempestConfig config)
         {
@@ -27,44 +32,50 @@ namespace ARC_TPA_Commands
                 AutoReset = false
             };
             _timer.Elapsed += OnTimerElapsed;
+            _serializer = new JavaScriptSerializer
+            {
+                MaxJsonLength = int.MaxValue,
+                RecursionLimit = 64
+            };
         }
 
         public void Start()
         {
-            if (string.IsNullOrWhiteSpace(_config.Map_Connection_String))
+            string endpoint = _config.Map_Live_Api_Url;
+            if (string.IsNullOrWhiteSpace(endpoint))
             {
-                Logger.LogWarning("[TempestMap] Map bridge skipped: Map_Connection_String is empty.");
+                Logger.LogWarning("[TempestMap] Live sync skipped: Map_Live_Api_Url is empty.");
                 return;
             }
 
-            string providerName = string.IsNullOrWhiteSpace(_config.Map_Provider_Invariant_Name)
-                ? "MySql.Data.MySqlClient"
-                : _config.Map_Provider_Invariant_Name;
-
-            try
+            if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var parsedEndpoint))
             {
-                _factory = DbProviderFactories.GetFactory(providerName);
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError($"[TempestMap] Unable to resolve the database provider '{providerName}': {ex}");
+                Logger.LogError($"[TempestMap] Live sync skipped: Map_Live_Api_Url '{endpoint}' is not a valid absolute URI.");
                 return;
             }
 
             try
             {
-                EnsureSchema();
+                _httpClient = new HttpClient
+                {
+                    Timeout = TimeSpan.FromSeconds(Math.Max(10, _config.Map_Refresh_Interval_Seconds + 5))
+                };
+                _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("ARC-Tempest-LiveSync/1.0");
+                _endpoint = parsedEndpoint;
+
                 lock (_syncRoot)
                 {
                     _isRunning = true;
+                    _isSending = false;
                 }
 
                 _timer.Start();
-                Logger.Log("[TempestMap] Tactical map bridge started.");
+                Task.Run(() => SendSnapshotIfNeeded());
+                Logger.Log("[TempestMap] Tactical map live sync started.");
             }
             catch (Exception ex)
             {
-                Logger.LogError($"[TempestMap] Failed to start tactical map bridge: {ex}");
+                Logger.LogError($"[TempestMap] Failed to start tactical map live sync: {ex}");
             }
         }
 
@@ -73,10 +84,12 @@ namespace ARC_TPA_Commands
             lock (_syncRoot)
             {
                 _isRunning = false;
+                _isSending = false;
             }
 
             _timer.Stop();
             _timer.Dispose();
+            _httpClient?.Dispose();
         }
 
         internal void TrackPlayer(UnturnedPlayer player)
@@ -86,32 +99,7 @@ namespace ARC_TPA_Commands
                 return;
             }
 
-            lock (_syncRoot)
-            {
-                if (!_isRunning)
-                {
-                    return;
-                }
-            }
-
-            try
-            {
-                SteamPlayer steamPlayer = PlayerTool.getSteamPlayer(player.CSteamID);
-                if (steamPlayer == null)
-                {
-                    return;
-                }
-
-                using (var connection = CreateConnection())
-                {
-                    connection.Open();
-                    UpsertPlayers(connection, new[] { steamPlayer });
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError($"[TempestMap] Failed to track player {player.CSteamID.m_SteamID}: {ex}");
-            }
+            RequestSnapshot();
         }
 
         internal void MarkPlayerOffline(ulong steamId)
@@ -121,88 +109,40 @@ namespace ARC_TPA_Commands
                 return;
             }
 
-            lock (_syncRoot)
-            {
-                if (!_isRunning)
-                {
-                    return;
-                }
-            }
-
-            try
-            {
-                using (var connection = CreateConnection())
-                {
-                    connection.Open();
-                    using (var command = connection.CreateCommand())
-                    {
-                        command.CommandText = "UPDATE tempest_player_positions SET is_online = 0, last_seen_utc = UTC_TIMESTAMP() WHERE steam_id = @steamId;";
-                        var steamParam = command.CreateParameter();
-                        steamParam.ParameterName = "@steamId";
-                        steamParam.Value = steamId;
-                        command.Parameters.Add(steamParam);
-                        command.ExecuteNonQuery();
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError($"[TempestMap] Failed to mark player {steamId} offline: {ex}");
-            }
-        }
-
-        private void EnsureSchema()
-        {
-            using (var connection = CreateConnection())
-            {
-                connection.Open();
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = @"
-CREATE TABLE IF NOT EXISTS tempest_map_metadata (
-    id TINYINT UNSIGNED NOT NULL PRIMARY KEY DEFAULT 1,
-    map_name VARCHAR(120) NOT NULL,
-    level_size INT NOT NULL,
-    last_synced_utc DATETIME NOT NULL,
-    UNIQUE KEY uq_tempest_map_metadata_id (id)
-);";
-                    command.ExecuteNonQuery();
-                }
-
-                using (var command = connection.CreateCommand())
-                {
-                    command.CommandText = @"
-CREATE TABLE IF NOT EXISTS tempest_player_positions (
-    steam_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
-    character_name VARCHAR(120) NOT NULL,
-    group_name VARCHAR(120) NULL,
-    position_x DOUBLE NOT NULL,
-    position_y DOUBLE NOT NULL,
-    position_z DOUBLE NOT NULL,
-    rotation_y DOUBLE NOT NULL,
-    is_online BIT NOT NULL DEFAULT 1,
-    last_seen_utc DATETIME NOT NULL,
-    INDEX idx_tempest_player_positions_last_seen (last_seen_utc)
-);";
-                    command.ExecuteNonQuery();
-                }
-            }
+            RequestSnapshot();
         }
 
         private void OnTimerElapsed(object sender, ElapsedEventArgs e)
         {
+            RequestSnapshot();
+        }
+
+        private void RequestSnapshot()
+        {
+            Task.Run(() => SendSnapshotIfNeeded());
+        }
+
+        private void SendSnapshotIfNeeded()
+        {
+            bool shouldSend;
             lock (_syncRoot)
             {
-                if (!_isRunning)
+                shouldSend = _isRunning && !_isSending;
+                if (shouldSend)
                 {
-                    return;
+                    _isSending = true;
                 }
+            }
+
+            if (!shouldSend)
+            {
+                RescheduleTimer();
+                return;
             }
 
             try
             {
-                CaptureSnapshot();
+                PushSnapshot();
             }
             catch (Exception ex)
             {
@@ -212,116 +152,80 @@ CREATE TABLE IF NOT EXISTS tempest_player_positions (
             {
                 lock (_syncRoot)
                 {
-                    if (_isRunning)
+                    _isSending = false;
+                }
+
+                RescheduleTimer();
+            }
+        }
+
+        private void RescheduleTimer()
+        {
+            lock (_syncRoot)
+            {
+                if (!_isRunning)
+                {
+                    return;
+                }
+
+                _timer.Stop();
+                _timer.Interval = GetRefreshIntervalMilliseconds();
+                _timer.Start();
+            }
+        }
+
+        private void PushSnapshot()
+        {
+            if (_httpClient == null || _endpoint == null)
+            {
+                return;
+            }
+
+            var snapshot = BuildSnapshot();
+            if (snapshot == null)
+            {
+                return;
+            }
+
+            string json = _serializer.Serialize(snapshot);
+            using (var request = new HttpRequestMessage(HttpMethod.Post, _endpoint))
+            {
+                request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                if (!string.IsNullOrWhiteSpace(_config.Map_Live_Api_Key))
+                {
+                    request.Headers.Add("X-Server-Key", _config.Map_Live_Api_Key);
+                }
+
+                var response = _httpClient.SendAsync(request).GetAwaiter().GetResult();
+                if (!response.IsSuccessStatusCode)
+                {
+                    string body = string.Empty;
+                    try
                     {
-                        _timer.Interval = GetRefreshIntervalMilliseconds();
-                        _timer.Start();
+                        body = response.Content != null
+                            ? response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+                            : string.Empty;
                     }
+                    catch
+                    {
+                        body = string.Empty;
+                    }
+
+                    Logger.LogError($"[TempestMap] Live sync rejected ({(int)response.StatusCode} {response.ReasonPhrase}). Body: {body}");
                 }
             }
         }
 
-        private void CaptureSnapshot()
+        private object BuildSnapshot()
         {
             var clients = Provider.clients ?? new List<SteamPlayer>();
+            var players = new List<object>(clients.Count);
+            DateTime capturedAt = DateTime.UtcNow;
 
-            try
+            foreach (var steamPlayer in clients.Where(p => p != null && p.player != null))
             {
-                using (var connection = CreateConnection())
-                {
-                    connection.Open();
-                    UpsertMetadata(connection);
-
-                    if (clients.Count > 0)
-                    {
-                        UpsertPlayers(connection, clients);
-                    }
-
-                    PurgeStalePlayers(connection);
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError($"[TempestMap] Snapshot failure: {ex}");
-            }
-        }
-
-        private void UpsertMetadata(IDbConnection connection)
-        {
-            string mapName = Level.info != null ? Level.info.name : Level.levelName;
-            int size = Level.size;
-
-            using (var command = connection.CreateCommand())
-            {
-                command.CommandText = @"
-INSERT INTO tempest_map_metadata (id, map_name, level_size, last_synced_utc)
-VALUES (1, @mapName, @levelSize, UTC_TIMESTAMP())
-ON DUPLICATE KEY UPDATE
-    map_name = VALUES(map_name),
-    level_size = VALUES(level_size),
-    last_synced_utc = VALUES(last_synced_utc);";
-
-                var nameParam = command.CreateParameter();
-                nameParam.ParameterName = "@mapName";
-                nameParam.Value = string.IsNullOrWhiteSpace(mapName) ? "Unknown" : mapName;
-                command.Parameters.Add(nameParam);
-
-                var sizeParam = command.CreateParameter();
-                sizeParam.ParameterName = "@levelSize";
-                sizeParam.Value = size;
-                command.Parameters.Add(sizeParam);
-
-                command.ExecuteNonQuery();
-            }
-        }
-
-        private void UpsertPlayers(IDbConnection connection, IEnumerable<SteamPlayer> players)
-        {
-            using (var command = connection.CreateCommand())
-            {
-                command.CommandText = @"
-INSERT INTO tempest_player_positions
-    (steam_id, character_name, group_name, position_x, position_y, position_z, rotation_y, is_online, last_seen_utc)
-VALUES (@steamId, @characterName, @groupName, @positionX, @positionY, @positionZ, @rotationY, 1, UTC_TIMESTAMP())
-ON DUPLICATE KEY UPDATE
-    character_name = VALUES(character_name),
-    group_name = VALUES(group_name),
-    position_x = VALUES(position_x),
-    position_y = VALUES(position_y),
-    position_z = VALUES(position_z),
-    rotation_y = VALUES(rotation_y),
-    is_online = 1,
-    last_seen_utc = VALUES(last_seen_utc);";
-
-                var steamIdParam = command.CreateParameter();
-                steamIdParam.ParameterName = "@steamId";
-                command.Parameters.Add(steamIdParam);
-
-                var nameParam = command.CreateParameter();
-                nameParam.ParameterName = "@characterName";
-                command.Parameters.Add(nameParam);
-
-                var groupParam = command.CreateParameter();
-                groupParam.ParameterName = "@groupName";
-                command.Parameters.Add(groupParam);
-
-                var xParam = command.CreateParameter();
-                xParam.ParameterName = "@positionX";
-                command.Parameters.Add(xParam);
-
-                var yParam = command.CreateParameter();
-                yParam.ParameterName = "@positionY";
-                command.Parameters.Add(yParam);
-
-                var zParam = command.CreateParameter();
-                zParam.ParameterName = "@positionZ";
-                command.Parameters.Add(zParam);
-
-                var rotationParam = command.CreateParameter();
-                rotationParam.ParameterName = "@rotationY";
-                command.Parameters.Add(rotationParam);
-
-                foreach (var steamPlayer in players.Where(p => p != null && p.player != null))
+                try
                 {
                     Vector3 position = steamPlayer.player.transform.position;
                     Vector3 rotation = steamPlayer.player.transform.rotation.eulerAngles;
@@ -330,45 +234,45 @@ ON DUPLICATE KEY UPDATE
                         ? steamPlayer.playerID.characterName
                         : steamPlayer.playerID.nickName;
                     string groupName = steamPlayer.playerID.groupName;
+                    byte health = steamPlayer.player.life != null ? steamPlayer.player.life.health : (byte)0;
 
-                    steamIdParam.Value = steamId;
-                    nameParam.Value = string.IsNullOrWhiteSpace(characterName) ? "Unknown Survivor" : characterName;
-                    groupParam.Value = string.IsNullOrWhiteSpace(groupName) ? (object)DBNull.Value : groupName;
-                    xParam.Value = Math.Round(position.x, 3, MidpointRounding.AwayFromZero);
-                    yParam.Value = Math.Round(position.y, 3, MidpointRounding.AwayFromZero);
-                    zParam.Value = Math.Round(position.z, 3, MidpointRounding.AwayFromZero);
-                    rotationParam.Value = Math.Round(rotation.y, 3, MidpointRounding.AwayFromZero);
-
-                    command.ExecuteNonQuery();
+                    players.Add(new
+                    {
+                        steamId = steamId.ToString(),
+                        characterName = string.IsNullOrWhiteSpace(characterName) ? "Unknown Survivor" : characterName,
+                        groupName = string.IsNullOrWhiteSpace(groupName) ? null : groupName,
+                        position = new
+                        {
+                            x = Math.Round(position.x, 3, MidpointRounding.AwayFromZero),
+                            y = Math.Round(position.y, 3, MidpointRounding.AwayFromZero),
+                            z = Math.Round(position.z, 3, MidpointRounding.AwayFromZero)
+                        },
+                        rotationY = Math.Round(rotation.y, 3, MidpointRounding.AwayFromZero),
+                        health = Math.Min(100, Math.Max(0, (int)health)),
+                        isOnline = true,
+                        lastSeenUtc = capturedAt.ToString("o")
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning($"[TempestMap] Failed to serialize player telemetry: {ex}");
                 }
             }
-        }
 
-        private void PurgeStalePlayers(IDbConnection connection)
-        {
-            int staleMinutes = Math.Max(1, _config.Map_Player_Stale_Minutes);
-            using (var command = connection.CreateCommand())
+            string mapName = Level.info != null ? Level.info.name : Level.levelName;
+            int levelSize = Level.size;
+
+            return new
             {
-                command.CommandText = $"UPDATE tempest_player_positions SET is_online = 0 WHERE is_online = 1 AND last_seen_utc < DATE_SUB(UTC_TIMESTAMP(), INTERVAL {staleMinutes} MINUTE);";
-                command.ExecuteNonQuery();
-            }
-        }
-
-        private IDbConnection CreateConnection()
-        {
-            if (_factory == null)
-            {
-                throw new InvalidOperationException("Database provider factory has not been initialized.");
-            }
-
-            var connection = _factory.CreateConnection();
-            if (connection == null)
-            {
-                throw new InvalidOperationException("Failed to create a database connection using the configured provider.");
-            }
-
-            connection.ConnectionString = _config.Map_Connection_String;
-            return connection;
+                capturedAt = capturedAt.ToString("o"),
+                map = new
+                {
+                    name = string.IsNullOrWhiteSpace(mapName) ? "Unknown" : mapName,
+                    levelSize,
+                    shareUrl = TempestPlugin.MapShareUrl
+                },
+                players
+            };
         }
 
         private double GetRefreshIntervalMilliseconds()

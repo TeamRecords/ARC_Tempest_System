@@ -17,6 +17,28 @@ body {
     radial-gradient(circle at bottom right, rgba(3, 7, 18, 0.9), rgba(3, 7, 18, 0.95));
 }
 
+.leaflet-container {
+  font: inherit;
+}
+
+.tempest-map {
+  background: radial-gradient(circle at top left, rgba(56, 189, 248, 0.08), transparent 55%),
+    radial-gradient(circle at bottom right, rgba(15, 23, 42, 0.92), rgba(15, 23, 42, 0.98));
+}
+
+.leaflet-tooltip {
+  background: rgba(15, 23, 42, 0.9);
+  color: #e2e8f0;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.45);
+}
+
+.leaflet-tooltip::before {
+  border-top-color: rgba(15, 23, 42, 0.9);
+}
+
 a {
   color: inherit;
 }
