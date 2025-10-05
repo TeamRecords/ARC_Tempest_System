@@ -99,7 +99,10 @@ export async function fetchPlayerSnapshot(): Promise<PlayerSnapshot> {
 
   try {
     const pool = getDatabase();
-    await ensureLiveSchema();
+    const schemaReady = await ensureLiveSchema();
+    if (!schemaReady) {
+      return createMockSnapshot();
+    }
 
     const [metadataRows] = await pool.query<MapMetadataRow[]>(
       "SELECT map_name, level_size, last_synced_utc, share_url FROM map_state WHERE id = 1 LIMIT 1"
