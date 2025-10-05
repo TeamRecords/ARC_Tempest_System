@@ -38,6 +38,8 @@ namespace ARC_TPA_Commands
         public ushort Map_Refresh_Interval_Seconds;
         public ushort Map_Player_Stale_Minutes;
         public string Map_Share_Url;
+        public string Map_Live_Api_Url;
+        public string Map_Live_Api_Key;
 
         public void LoadDefaults()
         {
@@ -53,6 +55,8 @@ namespace ARC_TPA_Commands
             Map_Refresh_Interval_Seconds = 5;
             Map_Player_Stale_Minutes = 2;
             Map_Share_Url = "https://tempest.arcfoundation.net/map";
+            Map_Live_Api_Url = "https://codex.tempest.arcfoundation.net/api/unturned/live";
+            Map_Live_Api_Key = "ChangeMe!";
         }
     }
 

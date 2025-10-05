@@ -1,125 +1,33 @@
-import DatabaseConstructor, { Database as DatabaseInstance } from "better-sqlite3";
-import { existsSync, mkdirSync } from "node:fs";
-import path from "node:path";
+import mysql, { type Pool } from "mysql2/promise";
 
-export type TempestDatabase = DatabaseInstance;
+export type TempestDatabase = Pool;
 
 let database: TempestDatabase | undefined;
 
-function getDatabasePath(): string {
-  const configuredPath = process.env.TEMPEST_MAP_DB_PATH;
-  if (configuredPath && configuredPath.trim().length > 0) {
-    return configuredPath;
-  }
-
-  return path.join(process.cwd(), "data", "tempest-map.db");
-}
-
-function ensureDirectoryExists(directory: string) {
-  if (!existsSync(directory)) {
-    mkdirSync(directory, { recursive: true });
-  }
-}
-
-function seedMetadata(db: TempestDatabase) {
-  const { count } = db.prepare("SELECT COUNT(*) AS count FROM tempest_map_metadata").get() as { count: number };
-  if (count > 0) {
-    return;
-  }
-
-  const now = new Date().toISOString();
-  db.prepare(
-    `INSERT INTO tempest_map_metadata (id, map_name, level_size, last_synced_utc)
-     VALUES (1, @mapName, @levelSize, @lastSyncedUtc)`
-  ).run({
-    mapName: "Tempest Training Grounds",
-    levelSize: 4096,
-    lastSyncedUtc: now
-  });
-}
-
-function seedPlayers(db: TempestDatabase) {
-  const { count } = db.prepare("SELECT COUNT(*) AS count FROM tempest_player_positions").get() as { count: number };
-  if (count > 0) {
-    return;
-  }
-
-  const now = new Date();
-  const players = [
-    {
-      steamId: "76561198000000001",
-      characterName: "Sentinel",
-      groupName: "Echo",
-      positionX: 512,
-      positionY: 20,
-      positionZ: -340,
-      rotationY: 120,
-      isOnline: 1,
-      lastSeenUtc: now.toISOString()
-    },
-    {
-      steamId: "76561198000000002",
-      characterName: "Ranger",
-      groupName: "Echo",
-      positionX: -210,
-      positionY: 18,
-      positionZ: 1024,
-      rotationY: 300,
-      isOnline: 0,
-      lastSeenUtc: new Date(now.getTime() - 120_000).toISOString()
-    }
-  ];
-
-  const statement = db.prepare(
-    `INSERT INTO tempest_player_positions
-      (steam_id, character_name, group_name, position_x, position_y, position_z, rotation_y, is_online, last_seen_utc)
-     VALUES
-      (@steamId, @characterName, @groupName, @positionX, @positionY, @positionZ, @rotationY, @isOnline, @lastSeenUtc)`
-  );
-
-  const insert = db.transaction((records: typeof players) => {
-    for (const record of records) {
-      statement.run(record);
-    }
-  });
-
-  insert(players);
-}
-
-function initialiseSchema(db: TempestDatabase) {
-  db.pragma("journal_mode = WAL");
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS tempest_map_metadata (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      map_name TEXT NOT NULL,
-      level_size INTEGER NOT NULL,
-      last_synced_utc TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS tempest_player_positions (
-      steam_id TEXT PRIMARY KEY,
-      character_name TEXT NOT NULL,
-      group_name TEXT,
-      position_x REAL NOT NULL,
-      position_y REAL NOT NULL,
-      position_z REAL NOT NULL,
-      rotation_y REAL NOT NULL,
-      is_online INTEGER NOT NULL DEFAULT 0,
-      last_seen_utc TEXT NOT NULL
-    );
-  `);
-
-  seedMetadata(db);
-  seedPlayers(db);
+function parseNumber(value: string | number | undefined, fallback: number): number {
+  const parsed = typeof value === "string" ? Number.parseInt(value, 10) : value;
+  return Number.isFinite(parsed as number) ? (parsed as number) : fallback;
 }
 
 function createDatabase(): TempestDatabase {
-  const databasePath = getDatabasePath();
-  ensureDirectoryExists(path.dirname(databasePath));
+  const host = process.env.MYSQL_HOST ?? "127.0.0.1";
+  const port = parseNumber(process.env.MYSQL_PORT, 3306);
+  const user = process.env.MYSQL_USER ?? "tempest";
+  const password = process.env.MYSQL_PASSWORD ?? "";
+  const databaseName = process.env.MYSQL_DATABASE ?? "tempest_map";
+  const connectionLimit = parseNumber(process.env.MYSQL_POOL_LIMIT, 10);
 
-  const db = new DatabaseConstructor(databasePath);
-  initialiseSchema(db);
-  return db;
+  return mysql.createPool({
+    host,
+    port,
+    user,
+    password,
+    database: databaseName,
+    waitForConnections: true,
+    connectionLimit,
+    queueLimit: 0,
+    dateStrings: true
+  });
 }
 
 export function getDatabase(): TempestDatabase {
@@ -130,9 +38,9 @@ export function getDatabase(): TempestDatabase {
   return database;
 }
 
-export function closeDatabase(): void {
+export async function closeDatabase(): Promise<void> {
   if (database) {
-    database.close();
+    await database.end();
     database = undefined;
   }
 }

@@ -1,4 +1,6 @@
 import { getDatabase } from "@/lib/db";
+import { ensureLiveSchema } from "@/lib/schema";
+import type { RowDataPacket } from "mysql2";
 
 export type PlayerPosition = {
   steamId: string;
@@ -10,6 +12,7 @@ export type PlayerPosition = {
     z: number;
   };
   rotationY: number;
+  health: number;
   isOnline: boolean;
   lastSeenUtc: string;
 };
@@ -18,6 +21,7 @@ export type MapMetadata = {
   mapName: string;
   levelSize: number;
   lastSyncedUtc: string;
+  shareUrl?: string | null;
 };
 
 export type PlayerSnapshot = {
@@ -29,7 +33,8 @@ const MOCK_SNAPSHOT: PlayerSnapshot = {
   metadata: {
     mapName: "Tempest Training Grounds",
     levelSize: 4096,
-    lastSyncedUtc: new Date().toISOString()
+    lastSyncedUtc: new Date().toISOString(),
+    shareUrl: "https://tempest.arcfoundation.net/map"
   },
   players: [
     {
@@ -38,6 +43,7 @@ const MOCK_SNAPSHOT: PlayerSnapshot = {
       groupName: "Echo",
       position: { x: 512, y: 20, z: -340 },
       rotationY: 120,
+      health: 96,
       isOnline: true,
       lastSeenUtc: new Date().toISOString()
     },
@@ -47,19 +53,21 @@ const MOCK_SNAPSHOT: PlayerSnapshot = {
       groupName: "Echo",
       position: { x: -210, y: 18, z: 1024 },
       rotationY: 300,
+      health: 72,
       isOnline: false,
-      lastSeenUtc: new Date(Date.now() - 120000).toISOString()
+      lastSeenUtc: new Date(Date.now() - 120_000).toISOString()
     }
   ]
 };
 
-type MapMetadataRow = {
+type MapMetadataRow = RowDataPacket & {
   map_name: string;
   level_size: number;
   last_synced_utc: string | null;
+  share_url: string | null;
 };
 
-type PlayerRow = {
+type PlayerRow = RowDataPacket & {
   steam_id: string;
   character_name: string;
   group_name: string | null;
@@ -67,6 +75,7 @@ type PlayerRow = {
   position_y: number;
   position_z: number;
   rotation_y: number;
+  health: number;
   is_online: number;
   last_seen_utc: string;
 };
@@ -82,23 +91,23 @@ function toIsoString(value: string | null | undefined): string {
 
 export async function fetchPlayerSnapshot(): Promise<PlayerSnapshot> {
   try {
-    const db = getDatabase();
+    const pool = getDatabase();
+    await ensureLiveSchema();
 
-    const metadataRow = db
-      .prepare("SELECT map_name, level_size, last_synced_utc FROM tempest_map_metadata WHERE id = 1 LIMIT 1")
-      .get() as MapMetadataRow | undefined;
+    const [metadataRows] = await pool.query<MapMetadataRow[]>(
+      "SELECT map_name, level_size, last_synced_utc, share_url FROM map_state WHERE id = 1 LIMIT 1"
+    );
 
-    const playerRows = db
-      .prepare(
-        "SELECT steam_id, character_name, group_name, position_x, position_y, position_z, rotation_y, is_online, last_seen_utc FROM tempest_player_positions ORDER BY is_online DESC, last_seen_utc DESC"
-      )
-      .all() as PlayerRow[];
+    const [playerRows] = await pool.query<PlayerRow[]>(
+      "SELECT steam_id, character_name, group_name, position_x, position_y, position_z, rotation_y, health, is_online, last_seen_utc FROM players ORDER BY is_online DESC, last_seen_utc DESC"
+    );
 
-    const metadata = metadataRow
+    const metadata = metadataRows.length
       ? {
-          mapName: metadataRow.map_name,
-          levelSize: metadataRow.level_size,
-          lastSyncedUtc: toIsoString(metadataRow.last_synced_utc)
+          mapName: metadataRows[0].map_name,
+          levelSize: metadataRows[0].level_size,
+          lastSyncedUtc: toIsoString(metadataRows[0].last_synced_utc),
+          shareUrl: metadataRows[0].share_url
         }
       : MOCK_SNAPSHOT.metadata;
 
@@ -108,6 +117,7 @@ export async function fetchPlayerSnapshot(): Promise<PlayerSnapshot> {
       groupName: row.group_name,
       position: { x: row.position_x, y: row.position_y, z: row.position_z },
       rotationY: row.rotation_y,
+      health: row.health,
       isOnline: row.is_online === 1,
       lastSeenUtc: toIsoString(row.last_seen_utc)
     }));

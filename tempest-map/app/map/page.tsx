@@ -26,7 +26,8 @@ export default function MapPage() {
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-3">
           <h1 className="text-3xl font-semibold tracking-tight text-white">Tempest Tactical Map</h1>
           <p className="text-sm text-slate-300">
-            Live player positions refreshed every {Math.max(5, Number(process.env.TEMPEST_MAP_REFRESH_SECONDS ?? 5))} seconds.
+            Live player positions refreshed every {Math.max(5, Number(process.env.TEMPEST_MAP_REFRESH_SECONDS ?? 5))} seconds via
+            the secured Codex ingest API.
           </p>
         </div>
       </div>

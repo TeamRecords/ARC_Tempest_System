@@ -10,10 +10,18 @@ cp .env.example .env.local
 npm run dev
 ```
 
-The development server runs on <http://localhost:3000> by default. The tactical map API connects to a local SQLite database. By
- default a database file is created at `./data/tempest-map.db` the first time the API is called and is seeded with sample
- telemetry. Adjust `TEMPEST_MAP_DB_PATH` in `.env.local` if you want to use a different location or point the site at a
- production database that is populated by the Tempest plugin.
+The development server runs on <http://localhost:3000> by default. Configure the following environment variables to connect both the ingest API and the tactical UI to your MySQL instance:
+
+```
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_USER=tempest
+MYSQL_PASSWORD=ChangeMe!
+MYSQL_DATABASE=tempest_map
+LIVE_SYNC_SERVER_KEY=ChangeMe!
+```
+
+The Rocket plugin will stream telemetry to `POST /api/unturned/live` with the `X-Server-Key` header set to `LIVE_SYNC_SERVER_KEY`. The Next.js `GET /api/live` endpoint (and the `/map` page) query the same database to power the Leaflet dashboard.
 
 ## Available scripts
 
@@ -25,7 +33,8 @@ The development server runs on <http://localhost:3000> by default. The tactical 
 ## Architecture highlights
 
 - **App Router** with server components for fast initial loads and streaming updates.
-- **Better SQLite3** for zero-ORM access to the telemetry tables populated by the Tempest plugin.
+- **MySQL-backed Codex API** for ingesting live telemetry directly from the Tempest plugin.
+- **Leaflet + React Leaflet** to render the live tactical picture with smooth refreshes.
 - **Tailwind CSS 4** design system with neon-accented tactical visuals.
 - Graceful fallbacks when the database is unavailable (mock telemetry keeps the UI alive).
 
