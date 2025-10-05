@@ -1,6 +1,9 @@
 ﻿using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using ARC_TPA_Commands;
+using Rocket.API;
+using Rocket.Core.Plugins;
 
 // General Information about an assembly is controlled through the following
 // set of attributes. Change these attribute values to modify the information
@@ -31,3 +34,5 @@ using System.Runtime.InteropServices;
 //
 [assembly: AssemblyVersion("1.0.0.0")]
 [assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: Plugin(Name = "ARC Tempest System", Author = "ARC", Version = "1.0.0")]
+[assembly: RocketPlugin(typeof(TempestPlugin))]
