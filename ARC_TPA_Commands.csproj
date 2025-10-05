@@ -90,8 +90,11 @@
 
     </Reference>
 
-    <Reference Include="UnityEngine">
-      <HintPath>C:\Program Files (x86)\Steam\steamapps\common\Unturned\Unturned_Data\Managed\UnityEngine.dll</HintPath>
+  <ItemGroup>
+    <Compile Include="Class1.cs" />
+    <Compile Include="TempestMapService.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
       <Private>false</Private>
     </Reference>
 
